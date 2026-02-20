@@ -1,0 +1,37 @@
+[package]
+name = "lite-strtab"
+version = "0.1.0"
+edition = "2021"
+description = "Crate for storing a lot of strings in a single buffer to save memory."
+repository = "https://github.com/Sewer56/lite-strtab"
+license = "MIT"
+include = ["src/**/*", "README.MD", "benches/**/*"]
+readme = "README.MD"
+
+[features]
+default = ["std"]
+std = []
+nightly = []
+memory-report = ["std", "dep:zstd"]
+
+[dependencies]
+allocator-api2 = { version = "0.4.0", default-features = false, features = ["alloc"] }
+thiserror = { version = "2.0", default-features = false }
+zstd = { version = "0.13", optional = true }
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dev-dependencies]
+criterion = "0.8"
+proptest = "1.9.0"
+zstd = "0.13"
+
+[[bin]]
+name = "memory_report"
+path = "src/bin/memory_report.rs"
+required-features = ["memory-report"]
+
+# Benchmark Stuff
+[[bench]]
+name = "my_benchmark"
+path = "benches/my_benchmark/main.rs"
+harness = false
