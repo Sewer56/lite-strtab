@@ -10,8 +10,8 @@ use crate::allocator::*;
 use crate::{Error, Offset, Result, StringId, StringIndex, StringTable};
 
 /// Alias for [`StringTableBuilder`].
-pub type StringPoolBuilder<O = u32, I = u32, A = Global, const NULL_PADDED: bool = false> =
-    StringTableBuilder<O, I, A, NULL_PADDED>;
+pub type StringPoolBuilder<O = u32, I = u32, const NULL_PADDED: bool = false, A = Global> =
+    StringTableBuilder<O, I, NULL_PADDED, A>;
 
 /// Incremental builder for [`crate::StringTable`].
 ///
@@ -24,8 +24,8 @@ pub type StringPoolBuilder<O = u32, I = u32, A = Global, const NULL_PADDED: bool
 pub struct StringTableBuilder<
     O = u32,
     I = u32,
-    A: Allocator + Clone = Global,
     const NULL_PADDED: bool = false,
+    A: Allocator + Clone = Global,
 > where
     O: Offset,
     I: StringIndex,
@@ -35,7 +35,7 @@ pub struct StringTableBuilder<
     _id: PhantomData<I>,
 }
 
-impl StringTableBuilder<u32, u32, Global, false> {
+impl StringTableBuilder<u32, u32, false, Global> {
     /// Creates an empty builder using the global allocator.
     #[inline]
     pub fn new() -> Self {
@@ -52,15 +52,32 @@ impl StringTableBuilder<u32, u32, Global, false> {
     }
 }
 
-impl Default for StringTableBuilder<u32, u32, Global, false> {
+impl Default for StringTableBuilder<u32, u32, false, Global> {
     #[inline]
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<O: Offset, I: StringIndex, A: Allocator + Clone, const NULL_PADDED: bool>
-    StringTableBuilder<O, I, A, NULL_PADDED>
+impl StringTableBuilder<u32, u32, true, Global> {
+    /// Creates an empty builder with null-padded mode using the global allocator.
+    #[inline]
+    pub fn new_null_padded() -> Self {
+        Self::new_in(Global)
+    }
+
+    /// Creates a null-padded builder with reserved capacities using the global allocator.
+    ///
+    /// `strings` is the expected number of strings, `bytes` is the expected
+    /// total number of UTF-8 bytes.
+    #[inline]
+    pub fn with_capacity_null_padded(strings: usize, bytes: usize) -> Self {
+        Self::with_capacity_in(strings, bytes, Global)
+    }
+}
+
+impl<O: Offset, I: StringIndex, const NULL_PADDED: bool, A: Allocator + Clone>
+    StringTableBuilder<O, I, NULL_PADDED, A>
 {
     /// Creates an empty builder with a custom allocator.
     pub fn new_in(allocator: A) -> Self {
@@ -154,7 +171,7 @@ impl<O: Offset, I: StringIndex, A: Allocator + Clone, const NULL_PADDED: bool>
     /// This does not copy string bytes. Internal vectors are converted into
     /// boxed slices so the resulting table is immutable and compact.
     #[inline]
-    pub fn build(self) -> StringTable<O, I, A, NULL_PADDED> {
+    pub fn build(self) -> StringTable<O, I, NULL_PADDED, A> {
         let table = StringTable::from_parts_unchecked(
             self.bytes.into_boxed_slice(),
             self.offsets.into_boxed_slice(),
@@ -201,7 +218,7 @@ mod tests {
 
     #[test]
     fn null_padded_single_string() {
-        let mut builder = StringTableBuilder::<u32, u32, Global, true>::new_in(Global);
+        let mut builder = StringTableBuilder::new_null_padded();
         let id = builder.try_push("hello").unwrap();
         let table = builder.build();
 
@@ -213,7 +230,7 @@ mod tests {
 
     #[test]
     fn null_padded_empty_string() {
-        let mut builder = StringTableBuilder::<u32, u32, Global, true>::new_in(Global);
+        let mut builder = StringTableBuilder::new_null_padded();
         let id = builder.try_push("").unwrap();
         let table = builder.build();
 

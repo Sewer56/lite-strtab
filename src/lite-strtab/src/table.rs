@@ -20,8 +20,8 @@ use crate::error::{ValidationError, ValidationResult};
 use crate::{Offset, StringId, StringIndex};
 
 /// Alias for [`StringTable`].
-pub type StringPool<O = u32, I = u32, A = Global, const NULL_PADDED: bool = false> =
-    StringTable<O, I, A, NULL_PADDED>;
+pub type StringPool<O = u32, I = u32, const NULL_PADDED: bool = false, A = Global> =
+    StringTable<O, I, NULL_PADDED, A>;
 
 /// Alias for [`StringTableIter`].
 pub type StringPoolIter<'a, O = u32, const NULL_PADDED: bool = false> =
@@ -58,8 +58,8 @@ pub type StringPoolIter<'a, O = u32, const NULL_PADDED: bool = false> =
 pub struct StringTable<
     O = u32,
     I = u32,
-    A: Allocator + Clone = Global,
     const NULL_PADDED: bool = false,
+    A: Allocator + Clone = Global,
 > where
     O: Offset,
     I: StringIndex,
@@ -69,7 +69,7 @@ pub struct StringTable<
     _id: PhantomData<I>,
 }
 
-impl StringTable<u32, u32, Global, false> {
+impl StringTable<u32, u32, false, Global> {
     /// Creates an empty table using the global allocator.
     #[inline]
     pub fn empty() -> Self {
@@ -77,8 +77,8 @@ impl StringTable<u32, u32, Global, false> {
     }
 }
 
-impl<O: Offset, I: StringIndex, A: Allocator + Clone, const NULL_PADDED: bool>
-    StringTable<O, I, A, NULL_PADDED>
+impl<O: Offset, I: StringIndex, const NULL_PADDED: bool, A: Allocator + Clone>
+    StringTable<O, I, NULL_PADDED, A>
 {
     /// Creates an empty table with a custom allocator.
     pub fn empty_in(allocator: A) -> Self {
@@ -334,7 +334,7 @@ mod tests {
         bytes: Vec<u8, Global>,
         offsets: Vec<O, Global>,
     ) -> ValidationResult<()> {
-        let table = StringTable::<O, I, Global, NULL_PADDED>::from_parts_unchecked(
+        let table = StringTable::<O, I, NULL_PADDED, Global>::from_parts_unchecked(
             bytes.into_boxed_slice(),
             offsets.into_boxed_slice(),
         );

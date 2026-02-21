@@ -25,6 +25,7 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
     let total_bytes = dataset.total_bytes;
     let string_count = entries.len();
     let table = build_table(entries, total_bytes);
+    let table_null_padded = build_table_null_padded(entries, total_bytes);
     let vec_strings = build_vec_strings(entries);
     let boxed_str_slice = build_boxed_str_slice(entries);
 
@@ -36,6 +37,7 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
         total_bytes,
         string_count,
         &table,
+        Some(&table_null_padded),
         &vec_strings,
         &boxed_str_slice,
         observe_str_ahash,
@@ -48,6 +50,7 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
         total_bytes,
         string_count,
         &table,
+        Some(&table_null_padded),
         &vec_strings,
         &boxed_str_slice,
         observe_str_ahash,
@@ -61,6 +64,7 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
         total_bytes,
         string_count,
         &table,
+        None,
         &vec_strings,
         &boxed_str_slice,
         observe_str_u8,
@@ -73,6 +77,7 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
         total_bytes,
         string_count,
         &table,
+        None,
         &vec_strings,
         &boxed_str_slice,
         observe_str_u8,
@@ -86,6 +91,7 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
         total_bytes,
         string_count,
         &table,
+        None,
         &vec_strings,
         &boxed_str_slice,
         observe_str_usize,
@@ -98,6 +104,7 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
         total_bytes,
         string_count,
         &table,
+        None,
         &vec_strings,
         &boxed_str_slice,
         observe_str_usize,
@@ -151,6 +158,26 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
         )
     });
     build_group.finish();
+
+    let mut construct_group_null_padded =
+        c.benchmark_group(format!("{dataset_name}/construct_null_padded"));
+    construct_group_null_padded.throughput(Throughput::Bytes(
+        (total_bytes.saturating_add(string_count)) as u64,
+    ));
+    construct_group_null_padded.bench_function("typical_builder", |b| {
+        b.iter(|| {
+            let mut builder = StringTableBuilder::new_null_padded();
+            for value in entries {
+                builder
+                    .try_push(value)
+                    .expect("failed to insert benchmark path");
+            }
+
+            let table = builder.build();
+            black_box(table.as_bytes().len())
+        })
+    });
+    construct_group_null_padded.finish();
 }
 
 fn bench_get_group<F>(
@@ -161,6 +188,7 @@ fn bench_get_group<F>(
     total_bytes: usize,
     string_count: usize,
     table: &StringTable<u32, u32>,
+    table_null_padded: Option<&StringTable<u32, u32, true>>,
     vec_strings: &[String],
     boxed_str_slice: &[Box<str>],
     observe: F,
@@ -212,6 +240,24 @@ fn bench_get_group<F>(
             })
         },
     );
+    if let Some(table_null_padded) = table_null_padded {
+        group.bench_function(
+            format!("lite_strtab_for_loop{benchmark_name_suffix}_null_padded"),
+            |b| {
+                b.iter(|| {
+                    let mut checksum = 0usize;
+                    for index in 0..string_count {
+                        let id = StringId::new(index as u32);
+                        let value = table_null_padded
+                            .get(id)
+                            .expect("benchmark id out of bounds");
+                        checksum = checksum.wrapping_add(observe(value));
+                    }
+                    black_box(checksum)
+                })
+            },
+        );
+    }
 
     group.finish();
 }
@@ -224,6 +270,7 @@ fn bench_get_unchecked_group<F>(
     total_bytes: usize,
     string_count: usize,
     table: &StringTable<u32, u32>,
+    table_null_padded: Option<&StringTable<u32, u32, true>>,
     vec_strings: &[String],
     boxed_str_slice: &[Box<str>],
     observe: F,
@@ -273,6 +320,22 @@ fn bench_get_unchecked_group<F>(
             })
         },
     );
+    if let Some(table_null_padded) = table_null_padded {
+        group.bench_function(
+            format!("lite_strtab_for_loop{benchmark_name_suffix}_null_padded_unchecked"),
+            |b| {
+                b.iter(|| {
+                    let mut checksum = 0usize;
+                    for index in 0..string_count {
+                        let id = StringId::new(index as u32);
+                        let value = unsafe { table_null_padded.get_unchecked(id) };
+                        checksum = checksum.wrapping_add(observe(value));
+                    }
+                    black_box(checksum)
+                })
+            },
+        );
+    }
 
     group.finish();
 }
@@ -308,6 +371,19 @@ fn load_dataset(dataset_path: &str) -> Dataset {
 
 fn build_table(entries: &[String], total_bytes: usize) -> StringTable<u32, u32> {
     let mut builder = StringTableBuilder::<u32>::with_capacity(entries.len(), total_bytes);
+    for value in entries {
+        builder
+            .try_push(value)
+            .expect("failed to insert benchmark path");
+    }
+    builder.build()
+}
+
+fn build_table_null_padded(entries: &[String], total_bytes: usize) -> StringTable<u32, u32, true> {
+    let mut builder = StringTableBuilder::with_capacity_null_padded(
+        entries.len(),
+        total_bytes.saturating_add(entries.len()),
+    );
     for value in entries {
         builder
             .try_push(value)

@@ -16,7 +16,7 @@ As simple as that.
 
 ## Design overview
 
-- `Memory`: one UTF-8 byte buffer plus one compact offset table
+- `Memory`: one UTF-8 byte buffer plus one compact offset table; optional NUL-termination
 - `CPU`: cheap ID-based lookups (bounds check + two offset reads)
 - `Binary size`: no panics on insertion, avoiding backtrace overhead
 
@@ -111,6 +111,21 @@ assert_eq!(id.into_raw(), 0u8);
 assert_eq!(table.get(id), Some("tiny-id"));
 ```
 
+## Null-padded mode
+
+Set `NULL_PADDED = true` to store strings with a trailing NUL byte:
+
+```rust
+use lite_strtab::StringTableBuilder;
+
+let mut builder = StringTableBuilder::new_null_padded();
+let id = builder.try_push("hello").unwrap();
+let table = builder.build();
+
+assert_eq!(table.get(id), Some("hello"));   // NUL trimmed
+assert_eq!(table.as_bytes(), b"hello\0");   // raw bytes include NUL
+```
+
 ## Scope
 
 This crate focuses on in-memory string storage only.
@@ -148,17 +163,21 @@ Three representative datasets were used:
 
 Summary
 
-| Representation    | Total               | Heap allocations    | Distributed fields  | vs lite-strtab |
-| ----------------- | ------------------- | ------------------- | ------------------- | -------------- |
-| `lite-strtab`     | 266068 (259.83 KiB) | 256736 (250.72 KiB) | 9300 (9.08 KiB)     | 1.00x          |
-| `Vec<String>`     | 384240 (375.23 KiB) | 272640 (266.25 KiB) | 111600 (108.98 KiB) | 1.44x          |
-| `Box<[Box<str>]>` | 346928 (338.80 KiB) | 272528 (266.14 KiB) | 74400 (72.66 KiB)   | 1.30x          |
+| Representation              | Total               | Heap allocations    | Distributed fields  | vs lite-strtab |
+| --------------------------- | ------------------- | ------------------- | ------------------- | -------------- |
+| `lite-strtab`               | 266068 (259.83 KiB) | 256736 (250.72 KiB) | 9300 (9.08 KiB)     | 1.00x          |
+| `lite-strtab (null-padded)` | 270708 (264.36 KiB) | 261376 (255.25 KiB) | 9300 (9.08 KiB)     | 1.02x          |
+| `Vec<String>`               | 384240 (375.23 KiB) | 272640 (266.25 KiB) | 111600 (108.98 KiB) | 1.44x          |
+| `Box<[Box<str>]>`           | 346928 (338.80 KiB) | 272528 (266.14 KiB) | 74400 (72.66 KiB)   | 1.30x          |
 
 Heap allocations (tree)
 
 - `lite-strtab`: `256736 (250.72 KiB)` (`96.49%`)
   - `StringTable<u32, u16>` byte buffer: `238120 (232.54 KiB)` (`92.75%` of heap) - concatenated UTF-8 string payload data
   - `StringTable<u32, u16>` offsets buffer: `18616 (18.18 KiB)` (`7.25%` of heap) - `u32` offsets into the shared byte buffer
+- `lite-strtab (null-padded)`: `261376 (255.25 KiB)` (`96.55%`)
+  - `StringTable<u32, u16, true>` byte buffer: `242760 (237.07 KiB)` (`92.88%` of heap) - concatenated UTF-8 string payload data with NUL terminators
+  - `StringTable<u32, u16, true>` offsets buffer: `18616 (18.18 KiB)` (`7.12%` of heap) - `u32` offsets into the shared byte buffer
 - `Vec<String>`: `272640 (266.25 KiB)` (`70.96%`)
   - `String` payload allocations: `272640 (266.25 KiB)` (`100.00%` of heap) - one UTF-8 allocation per string
 - `Box<[Box<str>]>`: `272528 (266.14 KiB)` (`78.55%`)
@@ -178,17 +197,21 @@ One-time metadata (table object itself)
 
 Summary
 
-| Representation    | Total           | Heap allocations | Distributed fields | vs lite-strtab |
-| ----------------- | --------------- | ---------------- | ------------------ | -------------- |
-| `lite-strtab`     | 2490 (2.43 KiB) | 2240 (2.19 KiB)  | 218 B              | 1.00x          |
-| `Vec<String>`     | 5504 (5.38 KiB) | 2888 (2.82 KiB)  | 2616 (2.55 KiB)    | 2.21x          |
-| `Box<[Box<str>]>` | 4472 (4.37 KiB) | 2728 (2.66 KiB)  | 1744 (1.70 KiB)    | 1.80x          |
+| Representation              | Total           | Heap allocations | Distributed fields | vs lite-strtab |
+| --------------------------- | --------------- | ---------------- | ------------------ | -------------- |
+| `lite-strtab`               | 2490 (2.43 KiB) | 2240 (2.19 KiB)  | 218 B              | 1.00x          |
+| `lite-strtab (null-padded)` | 2602 (2.54 KiB) | 2352 (2.30 KiB)  | 218 B              | 1.04x          |
+| `Vec<String>`               | 5504 (5.38 KiB) | 2888 (2.82 KiB)  | 2616 (2.55 KiB)    | 2.21x          |
+| `Box<[Box<str>]>`           | 4472 (4.37 KiB) | 2728 (2.66 KiB)  | 1744 (1.70 KiB)    | 1.80x          |
 
 Heap allocations (tree)
 
 - `lite-strtab`: `2240 (2.19 KiB)` (`89.96%`)
   - `StringTable<u32, u16>` byte buffer: `1800 (1.76 KiB)` (`80.36%` of heap) - concatenated UTF-8 string payload data
   - `StringTable<u32, u16>` offsets buffer: `440 B` (`19.64%` of heap) - `u32` offsets into the shared byte buffer
+- `lite-strtab (null-padded)`: `2352 (2.30 KiB)` (`90.39%`)
+  - `StringTable<u32, u16, true>` byte buffer: `1912 (1.87 KiB)` (`81.29%` of heap) - concatenated UTF-8 string payload data with NUL terminators
+  - `StringTable<u32, u16, true>` offsets buffer: `440 B` (`18.71%` of heap) - `u32` offsets into the shared byte buffer
 - `Vec<String>`: `2888 (2.82 KiB)` (`52.47%`)
   - `String` payload allocations: `2888 (2.82 KiB)` (`100.00%` of heap) - one UTF-8 allocation per string
 - `Box<[Box<str>]>`: `2728 (2.66 KiB)` (`61.00%`)
@@ -208,17 +231,21 @@ One-time metadata (table object itself)
 
 Summary
 
-| Representation    | Total           | Heap allocations | Distributed fields | vs lite-strtab |
-| ----------------- | --------------- | ---------------- | ------------------ | -------------- |
-| `lite-strtab`     | 4564 (4.46 KiB) | 4352 (4.25 KiB)  | 180 B              | 1.00x          |
-| `Vec<String>`     | 6896 (6.73 KiB) | 4736 (4.62 KiB)  | 2160 (2.11 KiB)    | 1.51x          |
-| `Box<[Box<str>]>` | 6112 (5.97 KiB) | 4672 (4.56 KiB)  | 1440 (1.41 KiB)    | 1.34x          |
+| Representation              | Total           | Heap allocations | Distributed fields | vs lite-strtab |
+| --------------------------- | --------------- | ---------------- | ------------------ | -------------- |
+| `lite-strtab`               | 4564 (4.46 KiB) | 4352 (4.25 KiB)  | 180 B              | 1.00x          |
+| `lite-strtab (null-padded)` | 4660 (4.55 KiB) | 4448 (4.34 KiB)  | 180 B              | 1.02x          |
+| `Vec<String>`               | 6896 (6.73 KiB) | 4736 (4.62 KiB)  | 2160 (2.11 KiB)    | 1.51x          |
+| `Box<[Box<str>]>`           | 6112 (5.97 KiB) | 4672 (4.56 KiB)  | 1440 (1.41 KiB)    | 1.34x          |
 
 Heap allocations (tree)
 
 - `lite-strtab`: `4352 (4.25 KiB)` (`95.35%`)
   - `StringTable<u32, u16>` byte buffer: `3976 (3.88 KiB)` (`91.36%` of heap) - concatenated UTF-8 string payload data
   - `StringTable<u32, u16>` offsets buffer: `376 B` (`8.64%` of heap) - `u32` offsets into the shared byte buffer
+- `lite-strtab (null-padded)`: `4448 (4.34 KiB)` (`95.45%`)
+  - `StringTable<u32, u16, true>` byte buffer: `4072 (3.98 KiB)` (`91.55%` of heap) - concatenated UTF-8 string payload data with NUL terminators
+  - `StringTable<u32, u16, true>` offsets buffer: `376 B` (`8.45%` of heap) - `u32` offsets into the shared byte buffer
 - `Vec<String>`: `4736 (4.62 KiB)` (`68.68%`)
   - `String` payload allocations: `4736 (4.62 KiB)` (`100.00%` of heap) - one UTF-8 allocation per string
 - `Box<[Box<str>]>`: `4672 (4.56 KiB)` (`76.44%`)
@@ -242,14 +269,16 @@ In this benchmark we sequentially read all of the 4,650 strings (238,109 bytes).
 
 Hashing the data with `AHash`, a realistic real world workload.
 
-| Access          | Representation    | avg time (us) | avg thrpt (GiB/s) |
-| --------------- | ----------------- | ------------- | ----------------- |
-| `get`           | `Vec<String>`     | 13.328        | 16.639            |
-| `get`           | `Box<[Box<str>]>` | 13.257        | 16.728            |
-| `get`           | `lite-strtab`     | 14.151        | 15.671            |
-| `get_unchecked` | `Vec<String>`     | 12.899        | 17.192            |
-| `get_unchecked` | `Box<[Box<str>]>` | 12.893        | 17.199            |
-| `get_unchecked` | `lite-strtab`     | 13.799        | 16.071            |
+| Access          | Representation              | avg time (µs) | avg thrpt (GiB/s) |
+| --------------- | --------------------------- | ------------- | ----------------- |
+| `get`           | `Vec<String>`               | 13.461        | 16.474            |
+| `get`           | `Box<[Box<str>]>`           | 13.262        | 16.721            |
+| `get`           | `lite-strtab`               | 14.177        | 15.642            |
+| `get`           | `lite-strtab (null-padded)` | 14.742        | 15.043            |
+| `get_unchecked` | `Vec<String>`               | 13.007        | 17.049            |
+| `get_unchecked` | `Box<[Box<str>]>`           | 12.942        | 17.134            |
+| `get_unchecked` | `lite-strtab`               | 15.160        | 14.628            |
+| `get_unchecked` | `lite-strtab (null-padded)` | 14.710        | 15.075            |
 
 More benches in codebase.
 Reproduce with `cargo bench --bench my_benchmark`.

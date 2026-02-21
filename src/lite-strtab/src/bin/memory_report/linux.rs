@@ -138,9 +138,25 @@ fn build_table(entries: &[String], total_bytes: usize) -> StringTable<u32, u16> 
     builder.build()
 }
 
+fn build_table_null_padded(
+    entries: &[String],
+    total_bytes: usize,
+) -> StringTable<u32, u16, true, Global> {
+    let mut builder = StringTableBuilder::<u32, u16, true, Global>::with_capacity_in(
+        entries.len(),
+        total_bytes.saturating_add(entries.len()),
+        Global,
+    );
+    for value in entries {
+        builder.try_push(value).expect("failed to insert value");
+    }
+    builder.build()
+}
+
 fn print_memory_report_for_dataset(dataset_name: &str, dataset: &Dataset) {
     let reports = [
         measure_lite_strtab_bytes(&dataset.entries, dataset.total_bytes),
+        measure_lite_strtab_null_padded_bytes(&dataset.entries, dataset.total_bytes),
         measure_string_fields_bytes(&dataset.entries),
         measure_boxed_str_fields_bytes(&dataset.entries),
     ];
@@ -179,6 +195,42 @@ fn measure_lite_strtab_bytes(entries: &[String], total_bytes: usize) -> Represen
             ),
             fixed_inline_component(
                 "`StringTable<u32, u16>` struct itself",
+                size_of_val(&table),
+                "single table struct stored inline",
+            ),
+        ],
+    }
+}
+
+fn measure_lite_strtab_null_padded_bytes(
+    entries: &[String],
+    total_bytes: usize,
+) -> RepresentationMeasurement {
+    let table = build_table_null_padded(entries, total_bytes);
+    let count = entries.len();
+    let id_bytes = size_of::<StringId<u16>>().saturating_mul(count);
+    let id_size = size_of::<StringId<u16>>();
+
+    RepresentationMeasurement {
+        name: "lite-strtab (null-padded)",
+        components: vec![
+            heap_component(
+                "`StringTable<u32, u16, true, Global>` byte buffer",
+                usable_size_for_slice(table.as_bytes()),
+                "concatenated UTF-8 string payload data with NUL terminators",
+            ),
+            heap_component(
+                "`StringTable<u32, u16, true, Global>` offsets buffer",
+                usable_size_for_slice(table.offsets()),
+                "`u32` offsets into the shared byte buffer",
+            ),
+            references_component(
+                "`StringId<u16>`",
+                id_bytes,
+                format!("field per string ({id_size} B each x {count})"),
+            ),
+            fixed_inline_component(
+                "`StringTable<u32, u16, true, Global>` struct itself",
                 size_of_val(&table),
                 "single table struct stored inline",
             ),

@@ -84,14 +84,16 @@ and hash them with `AHash` to simulate a realistic workload that involves readin
 
 ### AHash payload read (`get` / `get_unchecked`)
 
-| Access          | Representation    | avg time (us) | avg thrpt (GiB/s) |
-| --------------- | ----------------- | ------------- | ----------------- |
-| `get`           | `Vec<String>`     | 13.328        | 16.639            |
-| `get`           | `Box<[Box<str>]>` | 13.257        | 16.728            |
-| `get`           | `lite-strtab`     | 14.151        | 15.671            |
-| `get_unchecked` | `Vec<String>`     | 12.899        | 17.192            |
-| `get_unchecked` | `Box<[Box<str>]>` | 12.893        | 17.199            |
-| `get_unchecked` | `lite-strtab`     | 13.799        | 16.071            |
+| Access          | Representation              | avg time (µs) | avg thrpt (GiB/s) |
+| --------------- | --------------------------- | ------------- | ----------------- |
+| `get`           | `Vec<String>`               | 13.461        | 16.474            |
+| `get`           | `Box<[Box<str>]>`           | 13.262        | 16.721            |
+| `get`           | `lite-strtab`               | 14.177        | 15.642            |
+| `get`           | `lite-strtab (null-padded)` | 14.742        | 15.043            |
+| `get_unchecked` | `Vec<String>`               | 13.007        | 17.049            |
+| `get_unchecked` | `Box<[Box<str>]>`           | 12.942        | 17.134            |
+| `get_unchecked` | `lite-strtab`               | 15.160        | 14.628            |
+| `get_unchecked` | `lite-strtab (null-padded)` | 14.710        | 15.075            |
 
 Reproduce with `cargo bench --bench my_benchmark`. Linux glibc.
 
