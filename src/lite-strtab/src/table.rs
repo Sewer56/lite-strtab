@@ -166,8 +166,9 @@ impl<O: Offset, I: StringIndex, A: Allocator + Clone> StringTable<O, I, A> {
             return None;
         }
 
-        let start = self.offsets[index].to_usize();
-        let end = self.offsets[index + 1].to_usize();
+        // SAFETY: Bounds check above ensures `index` and `index + 1` are valid.
+        let start = unsafe { self.offsets.get_unchecked(index) }.to_usize();
+        let end = unsafe { self.offsets.get_unchecked(index + 1) }.to_usize();
         Some(start..end)
     }
 
@@ -255,8 +256,9 @@ impl<'a, O: Offset> Iterator for StringTableIter<'a, O> {
             return None;
         }
 
-        let start = self.offsets[self.index].to_usize();
-        let end = self.offsets[self.index + 1].to_usize();
+        // SAFETY: Bounds check above ensures `self.index` and `self.index + 1` are valid.
+        let start = unsafe { self.offsets.get_unchecked(self.index) }.to_usize();
+        let end = unsafe { self.offsets.get_unchecked(self.index + 1) }.to_usize();
         self.index += 1;
 
         // SAFETY: Pool invariants guarantee this slice is valid UTF-8.
