@@ -1,6 +1,8 @@
+use std::hash::{Hash, Hasher};
 use std::hint::black_box;
 use std::io::Read;
 
+use ahash::AHasher;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 use lite_strtab::{StringId, StringTable, StringTableBuilder};
 
@@ -23,16 +25,44 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
     let total_bytes = dataset.total_bytes;
     let string_count = entries.len();
     let table = build_table(entries, total_bytes);
+    let vec_strings = build_vec_strings(entries);
+    let boxed_str_slice = build_boxed_str_slice(entries);
 
     let mut get_group = c.benchmark_group(format!("{dataset_name}/get"));
     get_group.throughput(Throughput::Bytes(total_bytes as u64));
-    get_group.bench_function("for_loop", |b| {
+
+    get_group.bench_function("vec_string_for_loop", |b| {
+        b.iter(|| {
+            let mut checksum = 0usize;
+            for index in 0..string_count {
+                let value = vec_strings
+                    .get(index)
+                    .expect("benchmark index out of bounds");
+                checksum = checksum.wrapping_add(observe_str(value));
+            }
+            black_box(checksum)
+        })
+    });
+    get_group.bench_function("boxed_str_slice_for_loop", |b| {
+        b.iter(|| {
+            let mut checksum = 0usize;
+            for index in 0..string_count {
+                let value = boxed_str_slice
+                    .get(index)
+                    .expect("benchmark index out of bounds")
+                    .as_ref();
+                checksum = checksum.wrapping_add(observe_str(value));
+            }
+            black_box(checksum)
+        })
+    });
+    get_group.bench_function("lite_strtab_for_loop", |b| {
         b.iter(|| {
             let mut checksum = 0usize;
             for index in 0..string_count {
                 let id = StringId::new(index as u32);
                 let value = table.get(id).expect("benchmark id out of bounds");
-                checksum = checksum.wrapping_add(black_box(value.len()));
+                checksum = checksum.wrapping_add(observe_str(value));
             }
             black_box(checksum)
         })
@@ -41,13 +71,34 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
 
     let mut get_unchecked_group = c.benchmark_group(format!("{dataset_name}/get_unchecked"));
     get_unchecked_group.throughput(Throughput::Bytes(total_bytes as u64));
-    get_unchecked_group.bench_function("for_loop", |b| {
+
+    get_unchecked_group.bench_function("vec_string_for_loop_unchecked", |b| {
+        b.iter(|| {
+            let mut checksum = 0usize;
+            for index in 0..string_count {
+                let value = unsafe { vec_strings.get_unchecked(index) };
+                checksum = checksum.wrapping_add(observe_str(value));
+            }
+            black_box(checksum)
+        })
+    });
+    get_unchecked_group.bench_function("boxed_str_slice_for_loop_unchecked", |b| {
+        b.iter(|| {
+            let mut checksum = 0usize;
+            for index in 0..string_count {
+                let value = unsafe { boxed_str_slice.get_unchecked(index) }.as_ref();
+                checksum = checksum.wrapping_add(observe_str(value));
+            }
+            black_box(checksum)
+        })
+    });
+    get_unchecked_group.bench_function("lite_strtab_for_loop_unchecked", |b| {
         b.iter(|| {
             let mut checksum = 0usize;
             for index in 0..string_count {
                 let id = StringId::new(index as u32);
                 let value = unsafe { table.get_unchecked(id) };
-                checksum = checksum.wrapping_add(black_box(value.len()));
+                checksum = checksum.wrapping_add(observe_str(value));
             }
             black_box(checksum)
         })
@@ -141,6 +192,26 @@ fn build_table(entries: &[String], total_bytes: usize) -> StringTable<u32, u32> 
             .expect("failed to insert benchmark path");
     }
     builder.build()
+}
+
+fn build_vec_strings(entries: &[String]) -> Vec<String> {
+    entries.to_vec()
+}
+
+fn build_boxed_str_slice(entries: &[String]) -> Box<[Box<str>]> {
+    let mut vec = Vec::with_capacity(entries.len());
+    for value in entries {
+        vec.push(value.clone().into_boxed_str());
+    }
+    vec.into_boxed_slice()
+}
+
+// Read full payload bytes so cache-coherency effects are reflected in get benchmarks.
+#[inline(always)]
+fn observe_str(value: &str) -> usize {
+    let mut hasher = AHasher::default();
+    value.hash(&mut hasher);
+    hasher.finish() as usize
 }
 
 criterion_group! {
