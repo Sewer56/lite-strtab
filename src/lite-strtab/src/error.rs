@@ -66,4 +66,10 @@ pub(crate) enum ValidationError {
     },
     #[error("invalid string table: bytes for string index {index} are not valid UTF-8")]
     InvalidUtf8 { index: usize },
+    #[error("invalid string table: string index {index} in null-padded mode has no trailing byte")]
+    NullPaddedStringMissingTerminatorByte { index: usize },
+    #[error(
+        "invalid string table: string index {index} in null-padded mode must end with a NUL byte"
+    )]
+    NullPaddedStringMissingTrailingNul { index: usize },
 }

@@ -4,7 +4,7 @@
 //!
 //! - `bytes`: all UTF-8 string bytes concatenated
 //! - `offsets`: start offset for each string, plus one final sentinel
-//! - strings are not NUL-terminated; boundaries come from offsets
+//! - strings are not NUL-terminated by default; boundaries come from offsets
 //!
 //! For `n` strings, `offsets.len() == n + 1`.
 //! String `i` is `bytes[offsets[i]..offsets[i + 1]]`.
@@ -20,10 +20,12 @@ use crate::error::{ValidationError, ValidationResult};
 use crate::{Offset, StringId, StringIndex};
 
 /// Alias for [`StringTable`].
-pub type StringPool<O = u32, I = u32, A = Global> = StringTable<O, I, A>;
+pub type StringPool<O = u32, I = u32, A = Global, const NULL_PADDED: bool = false> =
+    StringTable<O, I, A, NULL_PADDED>;
 
 /// Alias for [`StringTableIter`].
-pub type StringPoolIter<'a, O = u32> = StringTableIter<'a, O>;
+pub type StringPoolIter<'a, O = u32, const NULL_PADDED: bool = false> =
+    StringTableIter<'a, O, NULL_PADDED>;
 
 /// Immutable string storage.
 ///
@@ -37,7 +39,8 @@ pub type StringPoolIter<'a, O = u32> = StringTableIter<'a, O>;
 /// equal to `bytes.len()`. This allows `get` to resolve a range with two
 /// offset reads.
 ///
-/// By default offsets and IDs use [`u32`].
+/// By default offsets and IDs use [`u32`], and strings are not NUL-padded.
+/// Set `NULL_PADDED = true` if strings are stored with a trailing NUL byte.
 ///
 /// # Example
 ///
@@ -52,8 +55,12 @@ pub type StringPoolIter<'a, O = u32> = StringTableIter<'a, O>;
 /// assert_eq!(table.get(a), Some("cat"));
 /// assert_eq!(table.get(b), Some("dog"));
 /// ```
-pub struct StringTable<O = u32, I = u32, A: Allocator + Clone = Global>
-where
+pub struct StringTable<
+    O = u32,
+    I = u32,
+    A: Allocator + Clone = Global,
+    const NULL_PADDED: bool = false,
+> where
     O: Offset,
     I: StringIndex,
 {
@@ -62,7 +69,7 @@ where
     _id: PhantomData<I>,
 }
 
-impl StringTable<u32, u32, Global> {
+impl StringTable<u32, u32, Global, false> {
     /// Creates an empty table using the global allocator.
     #[inline]
     pub fn empty() -> Self {
@@ -70,7 +77,9 @@ impl StringTable<u32, u32, Global> {
     }
 }
 
-impl<O: Offset, I: StringIndex, A: Allocator + Clone> StringTable<O, I, A> {
+impl<O: Offset, I: StringIndex, A: Allocator + Clone, const NULL_PADDED: bool>
+    StringTable<O, I, A, NULL_PADDED>
+{
     /// Creates an empty table with a custom allocator.
     pub fn empty_in(allocator: A) -> Self {
         let bytes = Vec::new_in(allocator.clone()).into_boxed_slice();
@@ -124,7 +133,10 @@ impl<O: Offset, I: StringIndex, A: Allocator + Clone> StringTable<O, I, A> {
         let index = id.into_usize();
         let start = self.offsets[index].to_usize();
         let end = self.offsets[index + 1].to_usize();
-        let bytes = unsafe { self.bytes.get_unchecked(start..end) };
+        // Const generic: default (`false`) folds `saturating_sub(0)` to `end`.
+        let logical_end = end.saturating_sub(usize::from(NULL_PADDED));
+        debug_assert!(logical_end >= start);
+        let bytes = unsafe { self.bytes.get_unchecked(start..logical_end) };
 
         // SAFETY: Invariants guarantee all ranges are valid UTF-8.
         unsafe { str::from_utf8_unchecked(bytes) }
@@ -132,7 +144,7 @@ impl<O: Offset, I: StringIndex, A: Allocator + Clone> StringTable<O, I, A> {
 
     /// Returns an iterator over all strings.
     #[inline]
-    pub fn iter(&self) -> StringTableIter<'_, O> {
+    pub fn iter(&self) -> StringTableIter<'_, O, NULL_PADDED> {
         StringTableIter {
             bytes: &self.bytes,
             offsets: &self.offsets,
@@ -169,7 +181,11 @@ impl<O: Offset, I: StringIndex, A: Allocator + Clone> StringTable<O, I, A> {
         // SAFETY: Bounds check above ensures `index` and `index + 1` are valid.
         let start = unsafe { self.offsets.get_unchecked(index) }.to_usize();
         let end = unsafe { self.offsets.get_unchecked(index + 1) }.to_usize();
-        Some(start..end)
+        // Const generic: default (`false`) folds `saturating_sub(0)` to `end`.
+        let logical_end = end.saturating_sub(usize::from(NULL_PADDED));
+        debug_assert!(logical_end >= start);
+
+        Some(start..logical_end)
     }
 
     #[cfg(any(debug_assertions, test))]
@@ -229,7 +245,24 @@ impl<O: Offset, I: StringIndex, A: Allocator + Clone> StringTable<O, I, A> {
                 });
             }
 
-            if str::from_utf8(&self.bytes[previous..current]).is_err() {
+            if NULL_PADDED {
+                if current == previous {
+                    return Err(ValidationError::NullPaddedStringMissingTerminatorByte {
+                        index: index - 1,
+                    });
+                }
+
+                let terminator_index = current - 1;
+                if self.bytes[terminator_index] != 0 {
+                    return Err(ValidationError::NullPaddedStringMissingTrailingNul {
+                        index: index - 1,
+                    });
+                }
+
+                if str::from_utf8(&self.bytes[previous..terminator_index]).is_err() {
+                    return Err(ValidationError::InvalidUtf8 { index: index - 1 });
+                }
+            } else if str::from_utf8(&self.bytes[previous..current]).is_err() {
                 return Err(ValidationError::InvalidUtf8 { index: index - 1 });
             }
 
@@ -241,13 +274,13 @@ impl<O: Offset, I: StringIndex, A: Allocator + Clone> StringTable<O, I, A> {
 }
 
 /// Iterator returned by [`StringTable::iter`].
-pub struct StringTableIter<'a, O: Offset = u32> {
+pub struct StringTableIter<'a, O: Offset = u32, const NULL_PADDED: bool = false> {
     bytes: &'a [u8],
     offsets: &'a [O],
     index: usize,
 }
 
-impl<'a, O: Offset> Iterator for StringTableIter<'a, O> {
+impl<'a, O: Offset, const NULL_PADDED: bool> Iterator for StringTableIter<'a, O, NULL_PADDED> {
     type Item = &'a str;
 
     #[inline]
@@ -261,8 +294,12 @@ impl<'a, O: Offset> Iterator for StringTableIter<'a, O> {
         let end = unsafe { self.offsets.get_unchecked(self.index + 1) }.to_usize();
         self.index += 1;
 
+        // Const generic: default (`false`) folds `saturating_sub(0)` to `end`.
+        let logical_end = end.saturating_sub(usize::from(NULL_PADDED));
+        debug_assert!(logical_end >= start);
+
         // SAFETY: Pool invariants guarantee this slice is valid UTF-8.
-        Some(unsafe { str::from_utf8_unchecked(&self.bytes[start..end]) })
+        Some(unsafe { str::from_utf8_unchecked(&self.bytes[start..logical_end]) })
     }
 
     #[inline]
@@ -272,14 +309,14 @@ impl<'a, O: Offset> Iterator for StringTableIter<'a, O> {
     }
 }
 
-impl<O: Offset> ExactSizeIterator for StringTableIter<'_, O> {
+impl<O: Offset, const NULL_PADDED: bool> ExactSizeIterator for StringTableIter<'_, O, NULL_PADDED> {
     #[inline]
     fn len(&self) -> usize {
         self.offsets.len().saturating_sub(1 + self.index)
     }
 }
 
-impl<O: Offset> FusedIterator for StringTableIter<'_, O> {}
+impl<O: Offset, const NULL_PADDED: bool> FusedIterator for StringTableIter<'_, O, NULL_PADDED> {}
 
 #[inline]
 fn zero_offset<O: Offset>() -> O {
@@ -293,11 +330,11 @@ mod tests {
     use crate::error::{ValidationError, ValidationResult};
     use crate::{Offset, StringId, StringIndex, StringTable};
 
-    fn validate_parts<O: Offset, I: StringIndex>(
+    fn validate_parts<O: Offset, I: StringIndex, const NULL_PADDED: bool>(
         bytes: Vec<u8, Global>,
         offsets: Vec<O, Global>,
     ) -> ValidationResult<()> {
-        let table = StringTable::<O, I>::from_parts_unchecked(
+        let table = StringTable::<O, I, Global, NULL_PADDED>::from_parts_unchecked(
             bytes.into_boxed_slice(),
             offsets.into_boxed_slice(),
         );
@@ -312,7 +349,7 @@ mod tests {
         let mut offsets = Vec::new_in(Global);
         offsets.push(0u32);
 
-        let result = validate_parts::<u32, u32>(bytes, offsets);
+        let result = validate_parts::<u32, u32, false>(bytes, offsets);
         assert!(matches!(
             result,
             Err(ValidationError::LastOffsetMismatch { .. })
@@ -330,7 +367,7 @@ mod tests {
         offsets.push(2u32);
         offsets.push(4u32);
 
-        let result = validate_parts::<u32, u32>(bytes, offsets);
+        let result = validate_parts::<u32, u32, false>(bytes, offsets);
         assert!(matches!(
             result,
             Err(ValidationError::OffsetsNotMonotonic { .. })
@@ -346,8 +383,37 @@ mod tests {
         offsets.push(0u32);
         offsets.push(1u32);
 
-        let result = validate_parts::<u32, u32>(bytes, offsets);
+        let result = validate_parts::<u32, u32, false>(bytes, offsets);
         assert!(matches!(result, Err(ValidationError::InvalidUtf8 { .. })));
+    }
+
+    #[test]
+    fn validate_null_padded_accepts_trailing_nul() {
+        let mut bytes = Vec::new_in(Global);
+        bytes.extend_from_slice(b"hello\0");
+
+        let mut offsets = Vec::new_in(Global);
+        offsets.push(0u32);
+        offsets.push(6u32);
+
+        let result = validate_parts::<u32, u32, true>(bytes, offsets);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_null_padded_rejects_missing_trailing_nul() {
+        let mut bytes = Vec::new_in(Global);
+        bytes.extend_from_slice(b"hello");
+
+        let mut offsets = Vec::new_in(Global);
+        offsets.push(0u32);
+        offsets.push(5u32);
+
+        let result = validate_parts::<u32, u32, true>(bytes, offsets);
+        assert!(matches!(
+            result,
+            Err(ValidationError::NullPaddedStringMissingTrailingNul { .. })
+        ));
     }
 
     #[test]
@@ -359,7 +425,7 @@ mod tests {
         offsets.push(0u8);
         offsets.push(3u8);
 
-        let result = validate_parts::<u8, u32>(bytes, offsets);
+        let result = validate_parts::<u8, u32, false>(bytes, offsets);
         assert!(result.is_ok());
 
         let mut too_big = Vec::new_in(Global);
@@ -368,7 +434,7 @@ mod tests {
         offsets.push(0u8);
         offsets.push(u8::MAX);
 
-        let result = validate_parts::<u8, u32>(too_big, offsets);
+        let result = validate_parts::<u8, u32, false>(too_big, offsets);
         assert!(matches!(
             result,
             Err(ValidationError::TooManyBytesForOffsetType { .. })

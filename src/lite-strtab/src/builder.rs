@@ -10,16 +10,23 @@ use crate::allocator::*;
 use crate::{Error, Offset, Result, StringId, StringIndex, StringTable};
 
 /// Alias for [`StringTableBuilder`].
-pub type StringPoolBuilder<O = u32, I = u32, A = Global> = StringTableBuilder<O, I, A>;
+pub type StringPoolBuilder<O = u32, I = u32, A = Global, const NULL_PADDED: bool = false> =
+    StringTableBuilder<O, I, A, NULL_PADDED>;
 
 /// Incremental builder for [`crate::StringTable`].
 ///
 /// Each call to [`Self::try_push`] appends string bytes to a single byte buffer and
 /// appends one offset.
 ///
-/// By default offsets and IDs use [`u32`].
-pub struct StringTableBuilder<O = u32, I = u32, A: Allocator + Clone = Global>
-where
+/// By default offsets and IDs use [`u32`], and inserted strings are not
+/// NUL-terminated. Set `NULL_PADDED = true` to store strings with a trailing
+/// NUL byte.
+pub struct StringTableBuilder<
+    O = u32,
+    I = u32,
+    A: Allocator + Clone = Global,
+    const NULL_PADDED: bool = false,
+> where
     O: Offset,
     I: StringIndex,
 {
@@ -28,7 +35,7 @@ where
     _id: PhantomData<I>,
 }
 
-impl StringTableBuilder<u32, u32, Global> {
+impl StringTableBuilder<u32, u32, Global, false> {
     /// Creates an empty builder using the global allocator.
     #[inline]
     pub fn new() -> Self {
@@ -45,14 +52,16 @@ impl StringTableBuilder<u32, u32, Global> {
     }
 }
 
-impl Default for StringTableBuilder<u32, u32, Global> {
+impl Default for StringTableBuilder<u32, u32, Global, false> {
     #[inline]
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<O: Offset, I: StringIndex, A: Allocator + Clone> StringTableBuilder<O, I, A> {
+impl<O: Offset, I: StringIndex, A: Allocator + Clone, const NULL_PADDED: bool>
+    StringTableBuilder<O, I, A, NULL_PADDED>
+{
     /// Creates an empty builder with a custom allocator.
     pub fn new_in(allocator: A) -> Self {
         let mut offsets = Vec::with_capacity_in(1, allocator.clone());
@@ -117,6 +126,15 @@ impl<O: Offset, I: StringIndex, A: Allocator + Clone> StringTableBuilder<O, I, A
                 bytes: start,
                 offset_type: O::TYPE_NAME,
             })?;
+        // Branch resolved at compile time; no runtime cost.
+        let end = if NULL_PADDED {
+            end.checked_add(1).ok_or(Error::TooManyBytesForOffsetType {
+                bytes: start,
+                offset_type: O::TYPE_NAME,
+            })?
+        } else {
+            end
+        };
 
         let end_offset = O::try_from_usize(end).ok_or(Error::TooManyBytesForOffsetType {
             bytes: end,
@@ -124,6 +142,9 @@ impl<O: Offset, I: StringIndex, A: Allocator + Clone> StringTableBuilder<O, I, A
         })?;
 
         self.bytes.extend_from_slice(value.as_bytes());
+        if NULL_PADDED {
+            self.bytes.push(0);
+        }
         self.offsets.push(end_offset);
         Ok(StringId::new(id_value))
     }
@@ -133,7 +154,7 @@ impl<O: Offset, I: StringIndex, A: Allocator + Clone> StringTableBuilder<O, I, A
     /// This does not copy string bytes. Internal vectors are converted into
     /// boxed slices so the resulting table is immutable and compact.
     #[inline]
-    pub fn build(self) -> StringTable<O, I, A> {
+    pub fn build(self) -> StringTable<O, I, A, NULL_PADDED> {
         let table = StringTable::from_parts_unchecked(
             self.bytes.into_boxed_slice(),
             self.offsets.into_boxed_slice(),
@@ -176,6 +197,30 @@ mod tests {
         assert_eq!(table.len(), 1);
         assert_eq!(table.get(id), Some("hello"));
         assert_eq!(table.offsets(), &[0u32, 5u32]);
+    }
+
+    #[test]
+    fn null_padded_single_string() {
+        let mut builder = StringTableBuilder::<u32, u32, Global, true>::new_in(Global);
+        let id = builder.try_push("hello").unwrap();
+        let table = builder.build();
+
+        assert_eq!(table.get(id), Some("hello"));
+        assert_eq!(table.as_bytes(), b"hello\0");
+        assert_eq!(table.offsets(), &[0u32, 6u32]);
+        assert_eq!(table.byte_range(id), Some(0..5));
+    }
+
+    #[test]
+    fn null_padded_empty_string() {
+        let mut builder = StringTableBuilder::<u32, u32, Global, true>::new_in(Global);
+        let id = builder.try_push("").unwrap();
+        let table = builder.build();
+
+        assert_eq!(table.get(id), Some(""));
+        assert_eq!(table.as_bytes(), b"\0");
+        assert_eq!(table.offsets(), &[0u32, 1u32]);
+        assert_eq!(table.byte_range(id), Some(0..0));
     }
 
     #[test]
