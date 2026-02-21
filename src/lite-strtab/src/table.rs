@@ -117,10 +117,23 @@ impl<O: Offset, I: StringIndex, const NULL_PADDED: bool, A: Allocator + Clone>
     /// Returns the string for a given ID.
     #[inline]
     pub fn get(&self, id: StringId<I>) -> Option<&str> {
-        let range = self.byte_range(id)?;
+        let index = id.into_usize();
+        if index >= self.len() {
+            return None;
+        }
 
+        // SAFETY: Bounds check above guarantees both offset entries exist.
+        let start = unsafe { self.offsets.get_unchecked(index) }.to_usize();
+        // SAFETY: Bounds check above guarantees both offset entries exist.
+        let end = unsafe { self.offsets.get_unchecked(index + 1) }.to_usize();
+        // Const generic: default (`false`) folds `saturating_sub(0)` to `end`.
+        let logical_end = end.saturating_sub(usize::from(NULL_PADDED));
+        debug_assert!(logical_end >= start);
+
+        // SAFETY: Table invariants guarantee this range is in bounds and valid UTF-8.
+        let bytes = unsafe { self.bytes.get_unchecked(start..logical_end) };
         // SAFETY: Invariants guarantee all ranges are valid UTF-8.
-        Some(unsafe { str::from_utf8_unchecked(&self.bytes[range]) })
+        Some(unsafe { str::from_utf8_unchecked(bytes) })
     }
 
     /// Returns the string for a given ID without bounds checks.
@@ -131,8 +144,8 @@ impl<O: Offset, I: StringIndex, const NULL_PADDED: bool, A: Allocator + Clone>
     #[inline]
     pub unsafe fn get_unchecked(&self, id: StringId<I>) -> &str {
         let index = id.into_usize();
-        let start = self.offsets[index].to_usize();
-        let end = self.offsets[index + 1].to_usize();
+        let start = unsafe { self.offsets.get_unchecked(index) }.to_usize();
+        let end = unsafe { self.offsets.get_unchecked(index + 1) }.to_usize();
         // Const generic: default (`false`) folds `saturating_sub(0)` to `end`.
         let logical_end = end.saturating_sub(usize::from(NULL_PADDED));
         debug_assert!(logical_end >= start);
