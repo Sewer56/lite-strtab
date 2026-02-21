@@ -234,6 +234,40 @@ One-time metadata (table object itself)
 
 - `lite-strtab`: `32 B` (`StringTable<u32, u16>` struct itself; one per table, not per string)
 
+### Read performance (YakuzaKiwami)
+
+In this benchmark we sequentially read all of the 4,650 strings (238,109 bytes).
+
+#### AHash payload read (`get` / `get_unchecked`)
+
+Hashing the data with `AHash`, a realistic real world workload.
+
+| Access          | Representation    | avg time (us) | avg thrpt (GiB/s) |
+| --------------- | ----------------- | ------------- | ----------------- |
+| `get`           | `Vec<String>`     | 13.328        | 16.639            |
+| `get`           | `Box<[Box<str>]>` | 13.257        | 16.728            |
+| `get`           | `lite-strtab`     | 14.151        | 15.671            |
+| `get_unchecked` | `Vec<String>`     | 12.899        | 17.192            |
+| `get_unchecked` | `Box<[Box<str>]>` | 12.893        | 17.199            |
+| `get_unchecked` | `lite-strtab`     | 13.799        | 16.071            |
+
+More benches in codebase.
+Reproduce with `cargo bench --bench my_benchmark`.
+This was ran on Linux w/ glibc.
+
+You may notice read perf is down ~5-8% in read tests.
+
+- Generally speaking, the time to get the `&str` is negligible.
+- It is actually reading the data that far outweighs it.
+
+The cause of the difference here is allocation alignment. The standard containers
+will allocate start of each string on at least a `usize` boundary; which improves
+read performance by avoiding unaligned accesses.
+
+In this case we treat reduced heap size (see above) in exchange for some read speed.
+If you wanted the speed back, just modify this crate to add some alignment 😉,
+but in my case it's not needed, as the data isn't accessed super often.
+
 ## License
 
 MIT

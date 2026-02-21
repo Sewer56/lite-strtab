@@ -28,82 +28,80 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
     let vec_strings = build_vec_strings(entries);
     let boxed_str_slice = build_boxed_str_slice(entries);
 
-    let mut get_group = c.benchmark_group(format!("{dataset_name}/get"));
-    get_group.throughput(Throughput::Bytes(total_bytes as u64));
+    bench_get_group(
+        c,
+        dataset_name,
+        "get",
+        "",
+        total_bytes,
+        string_count,
+        &table,
+        &vec_strings,
+        &boxed_str_slice,
+        observe_str_ahash,
+    );
+    bench_get_unchecked_group(
+        c,
+        dataset_name,
+        "get_unchecked",
+        "",
+        total_bytes,
+        string_count,
+        &table,
+        &vec_strings,
+        &boxed_str_slice,
+        observe_str_ahash,
+    );
 
-    get_group.bench_function("vec_string_for_loop", |b| {
-        b.iter(|| {
-            let mut checksum = 0usize;
-            for index in 0..string_count {
-                let value = vec_strings
-                    .get(index)
-                    .expect("benchmark index out of bounds");
-                checksum = checksum.wrapping_add(observe_str(value));
-            }
-            black_box(checksum)
-        })
-    });
-    get_group.bench_function("boxed_str_slice_for_loop", |b| {
-        b.iter(|| {
-            let mut checksum = 0usize;
-            for index in 0..string_count {
-                let value = boxed_str_slice
-                    .get(index)
-                    .expect("benchmark index out of bounds")
-                    .as_ref();
-                checksum = checksum.wrapping_add(observe_str(value));
-            }
-            black_box(checksum)
-        })
-    });
-    get_group.bench_function("lite_strtab_for_loop", |b| {
-        b.iter(|| {
-            let mut checksum = 0usize;
-            for index in 0..string_count {
-                let id = StringId::new(index as u32);
-                let value = table.get(id).expect("benchmark id out of bounds");
-                checksum = checksum.wrapping_add(observe_str(value));
-            }
-            black_box(checksum)
-        })
-    });
-    get_group.finish();
+    bench_get_group(
+        c,
+        dataset_name,
+        "get_u8",
+        "_u8",
+        total_bytes,
+        string_count,
+        &table,
+        &vec_strings,
+        &boxed_str_slice,
+        observe_str_u8,
+    );
+    bench_get_unchecked_group(
+        c,
+        dataset_name,
+        "get_u8_unchecked",
+        "_u8",
+        total_bytes,
+        string_count,
+        &table,
+        &vec_strings,
+        &boxed_str_slice,
+        observe_str_u8,
+    );
 
-    let mut get_unchecked_group = c.benchmark_group(format!("{dataset_name}/get_unchecked"));
-    get_unchecked_group.throughput(Throughput::Bytes(total_bytes as u64));
-
-    get_unchecked_group.bench_function("vec_string_for_loop_unchecked", |b| {
-        b.iter(|| {
-            let mut checksum = 0usize;
-            for index in 0..string_count {
-                let value = unsafe { vec_strings.get_unchecked(index) };
-                checksum = checksum.wrapping_add(observe_str(value));
-            }
-            black_box(checksum)
-        })
-    });
-    get_unchecked_group.bench_function("boxed_str_slice_for_loop_unchecked", |b| {
-        b.iter(|| {
-            let mut checksum = 0usize;
-            for index in 0..string_count {
-                let value = unsafe { boxed_str_slice.get_unchecked(index) }.as_ref();
-                checksum = checksum.wrapping_add(observe_str(value));
-            }
-            black_box(checksum)
-        })
-    });
-    get_unchecked_group.bench_function("lite_strtab_for_loop_unchecked", |b| {
-        b.iter(|| {
-            let mut checksum = 0usize;
-            for index in 0..string_count {
-                let id = StringId::new(index as u32);
-                let value = unsafe { table.get_unchecked(id) };
-                checksum = checksum.wrapping_add(observe_str(value));
-            }
-            black_box(checksum)
-        })
-    });
-    get_unchecked_group.finish();
+    bench_get_group(
+        c,
+        dataset_name,
+        "get_usize",
+        "_usize",
+        total_bytes,
+        string_count,
+        &table,
+        &vec_strings,
+        &boxed_str_slice,
+        observe_str_usize,
+    );
+    bench_get_unchecked_group(
+        c,
+        dataset_name,
+        "get_usize_unchecked",
+        "_usize",
+        total_bytes,
+        string_count,
+        &table,
+        &vec_strings,
+        &boxed_str_slice,
+        observe_str_usize,
+    );
 
     let mut insert_group = c.benchmark_group(format!("{dataset_name}/insert"));
     insert_group.throughput(Throughput::Bytes(total_bytes as u64));
@@ -153,6 +151,130 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
         )
     });
     build_group.finish();
+}
+
+fn bench_get_group<F>(
+    c: &mut Criterion,
+    dataset_name: &str,
+    group_name_suffix: &str,
+    benchmark_name_suffix: &str,
+    total_bytes: usize,
+    string_count: usize,
+    table: &StringTable<u32, u32>,
+    vec_strings: &[String],
+    boxed_str_slice: &[Box<str>],
+    observe: F,
+) where
+    F: Fn(&str) -> usize + Copy,
+{
+    let mut group = c.benchmark_group(format!("{dataset_name}/{group_name_suffix}"));
+    group.throughput(Throughput::Bytes(total_bytes as u64));
+
+    group.bench_function(format!("vec_string_for_loop{benchmark_name_suffix}"), |b| {
+        b.iter(|| {
+            let mut checksum = 0usize;
+            for index in 0..string_count {
+                let value = vec_strings
+                    .get(index)
+                    .expect("benchmark index out of bounds");
+                checksum = checksum.wrapping_add(observe(value));
+            }
+            black_box(checksum)
+        })
+    });
+    group.bench_function(
+        format!("boxed_str_slice_for_loop{benchmark_name_suffix}"),
+        |b| {
+            b.iter(|| {
+                let mut checksum = 0usize;
+                for index in 0..string_count {
+                    let value = boxed_str_slice
+                        .get(index)
+                        .expect("benchmark index out of bounds")
+                        .as_ref();
+                    checksum = checksum.wrapping_add(observe(value));
+                }
+                black_box(checksum)
+            })
+        },
+    );
+    group.bench_function(
+        format!("lite_strtab_for_loop{benchmark_name_suffix}"),
+        |b| {
+            b.iter(|| {
+                let mut checksum = 0usize;
+                for index in 0..string_count {
+                    let id = StringId::new(index as u32);
+                    let value = table.get(id).expect("benchmark id out of bounds");
+                    checksum = checksum.wrapping_add(observe(value));
+                }
+                black_box(checksum)
+            })
+        },
+    );
+
+    group.finish();
+}
+
+fn bench_get_unchecked_group<F>(
+    c: &mut Criterion,
+    dataset_name: &str,
+    group_name_suffix: &str,
+    benchmark_name_suffix: &str,
+    total_bytes: usize,
+    string_count: usize,
+    table: &StringTable<u32, u32>,
+    vec_strings: &[String],
+    boxed_str_slice: &[Box<str>],
+    observe: F,
+) where
+    F: Fn(&str) -> usize + Copy,
+{
+    let mut group = c.benchmark_group(format!("{dataset_name}/{group_name_suffix}"));
+    group.throughput(Throughput::Bytes(total_bytes as u64));
+
+    group.bench_function(
+        format!("vec_string_for_loop{benchmark_name_suffix}_unchecked"),
+        |b| {
+            b.iter(|| {
+                let mut checksum = 0usize;
+                for index in 0..string_count {
+                    let value = unsafe { vec_strings.get_unchecked(index) };
+                    checksum = checksum.wrapping_add(observe(value));
+                }
+                black_box(checksum)
+            })
+        },
+    );
+    group.bench_function(
+        format!("boxed_str_slice_for_loop{benchmark_name_suffix}_unchecked"),
+        |b| {
+            b.iter(|| {
+                let mut checksum = 0usize;
+                for index in 0..string_count {
+                    let value = unsafe { boxed_str_slice.get_unchecked(index) }.as_ref();
+                    checksum = checksum.wrapping_add(observe(value));
+                }
+                black_box(checksum)
+            })
+        },
+    );
+    group.bench_function(
+        format!("lite_strtab_for_loop{benchmark_name_suffix}_unchecked"),
+        |b| {
+            b.iter(|| {
+                let mut checksum = 0usize;
+                for index in 0..string_count {
+                    let id = StringId::new(index as u32);
+                    let value = unsafe { table.get_unchecked(id) };
+                    checksum = checksum.wrapping_add(observe(value));
+                }
+                black_box(checksum)
+            })
+        },
+    );
+
+    group.finish();
 }
 
 fn load_dataset(dataset_path: &str) -> Dataset {
@@ -206,12 +328,61 @@ fn build_boxed_str_slice(entries: &[String]) -> Box<[Box<str>]> {
     vec.into_boxed_slice()
 }
 
-// Read full payload bytes so cache-coherency effects are reflected in get benchmarks.
 #[inline(always)]
-fn observe_str(value: &str) -> usize {
+fn observe_str_ahash(value: &str) -> usize {
     let mut hasher = AHasher::default();
     value.hash(&mut hasher);
     hasher.finish() as usize
+}
+
+#[inline(always)]
+fn observe_str_u8(value: &str) -> usize {
+    let bytes = value.as_bytes();
+    let mut checksum = 0usize;
+
+    // Safety: `ptr` and `end` are derived from the same slice and `ptr`
+    // advances within bounds until it reaches `end`.
+    unsafe {
+        let mut ptr = bytes.as_ptr();
+        let end = ptr.add(bytes.len());
+
+        while ptr != end {
+            checksum = checksum.wrapping_add(*ptr as usize);
+            ptr = ptr.add(1);
+        }
+    }
+
+    checksum
+}
+
+#[inline(always)]
+fn observe_str_usize(value: &str) -> usize {
+    let bytes = value.as_bytes();
+    let mut checksum = 0usize;
+
+    let chunk_size = core::mem::size_of::<usize>();
+    let chunk_count = bytes.len() / chunk_size;
+    let chunk_bytes = chunk_count * chunk_size;
+
+    // Safety: all pointer arithmetic stays within `bytes` bounds, and
+    // `usize` has no invalid bit patterns, so unaligned loads are valid.
+    unsafe {
+        let base = bytes.as_ptr();
+        let mut offset = 0usize;
+
+        while offset < chunk_bytes {
+            let chunk_ptr = base.add(offset).cast::<usize>();
+            checksum = checksum.wrapping_add(chunk_ptr.read_unaligned());
+            offset += chunk_size;
+        }
+
+        while offset < bytes.len() {
+            checksum = checksum.wrapping_add(*base.add(offset) as usize);
+            offset += 1;
+        }
+    }
+
+    checksum
 }
 
 criterion_group! {
