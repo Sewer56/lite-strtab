@@ -27,6 +27,9 @@ The common choice is `O = u32` and `I = u16`.
 
 [Note: Numbers are for 64-bit machines.]
 
+For a companion blog post with additional design insights and real-world context, see
+[Sometimes I Need to Store a Lot of Strings Efficiently, So I Built lite-strtab][companion-blog-post].
+
 Types like [`Box<[String]>`] and [`Box<[Box<str>]>`] keep one handle per element:
 - [`Box<[String]>`]: 24 bytes (ptr + len + capacity)
 - [`Box<[Box<str>]>`]: 16 bytes (ptr + len)
@@ -378,6 +381,7 @@ Overhead of processing the data largely dominates; so the difference here is neg
 
 MIT
 
+[companion-blog-post]: https://sewer56.dev/blog/2026/02/22/sometimes-i-need-to-store-a-lot-of-strings-efficiently-so-i-built-lite-strtab.html
 [`Box<[Box<str>]>`]: alloc::boxed::Box
 [`Box<[String]>`]: alloc::boxed::Box
 [`Offset`]: crate::Offset

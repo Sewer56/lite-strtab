@@ -15,6 +15,9 @@ Designed to minimize:
 See [full crate docs](src/lite-strtab/README.MD) for more details.
 Below is just a sneak peek.
 
+For a companion blog post with additional design insights and real-world context, see
+[Sometimes I Need to Store a Lot of Strings Efficiently, So I Built lite-strtab][companion-blog-post].
+
 ## Quick start
 
 ```toml
@@ -130,3 +133,5 @@ Overhead of processing the data largely dominates; so the difference here is neg
 ## License
 
 MIT
+
+[companion-blog-post]: https://sewer56.dev/blog/2026/02/22/sometimes-i-need-to-store-a-lot-of-strings-efficiently-so-i-built-lite-strtab.html
