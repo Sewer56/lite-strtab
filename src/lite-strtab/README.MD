@@ -328,8 +328,7 @@ Using native iterators where available.
 | `usize` | `Box<[Box<str>]>`           | 7.845         | 28.268            |
 | `usize` | `lite-strtab`               | 7.588         | 29.226            |
 
-Reproduce with `cargo bench --bench my_benchmark`.
-This was ran on Linux w/ glibc.
+Reproduce with `cargo bench --bench my_benchmark`. Linux glibc. cargo 1.95.0-nightly (fe2f314ae 2026-01-30).
 
 In summary, actual read performance on real data is within margin of error.
 
@@ -354,6 +353,8 @@ Instruction count to get `&str`, x86_64, release mode:
 | `Box<[Box<str>]>::get_unchecked` | ~4           | load ptr → deref for (ptr, len)                          |
 
 Overhead of processing the data largely dominates; so the difference here is negligible.
+
+[^1]: `RUSTFLAGS="-C target-cpu=native" cargo bench` is ~80% faster on 9950X3D; relative differences unchanged.
 
 ## License
 
