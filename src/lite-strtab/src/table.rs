@@ -160,10 +160,18 @@ impl<O: Offset, I: StringIndex, const NULL_PADDED: bool, A: Allocator + Clone>
     /// Returns an iterator over all strings.
     #[inline]
     pub fn iter(&self) -> StringTableIter<'_, O, NULL_PADDED> {
+        let offsets = &self.offsets;
+        let strings = offsets.len().saturating_sub(1);
+        let cur_offset = offsets.as_ptr();
+
         StringTableIter {
             bytes: &self.bytes,
-            offsets: &self.offsets,
-            index: 0,
+            cur_offset,
+            // SAFETY: `strings` is at most `offsets.len() - 1`, so this stays
+            // in-bounds and may equal `cur_offset` for an empty iterator.
+            max_offset: unsafe { cur_offset.add(strings) },
+            remaining: strings,
+            _offsets: PhantomData,
         }
     }
 
@@ -294,8 +302,10 @@ impl<O: Offset, I: StringIndex, const NULL_PADDED: bool, A: Allocator + Clone>
 /// Iterator returned by [`StringTable::iter`].
 pub struct StringTableIter<'a, O: Offset = u32, const NULL_PADDED: bool = false> {
     bytes: &'a [u8],
-    offsets: &'a [O],
-    index: usize,
+    cur_offset: *const O,
+    max_offset: *const O,
+    remaining: usize,
+    _offsets: PhantomData<&'a [O]>,
 }
 
 impl<'a, O: Offset, const NULL_PADDED: bool> Iterator for StringTableIter<'a, O, NULL_PADDED> {
@@ -303,21 +313,21 @@ impl<'a, O: Offset, const NULL_PADDED: bool> Iterator for StringTableIter<'a, O,
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        // Failure (None) is unlikely; users typically provide valid indices.
-        // Since likely/unlikely isn't stable, we structure this so the
-        // success path falls through without jumps, improving pipelining.
-        if self.index + 1 < self.offsets.len() {
-            // SAFETY: Bounds check above ensures `self.index` and `self.index + 1` are valid.
-            let start = unsafe { self.offsets.get_unchecked(self.index) }.to_usize();
-            let end = unsafe { self.offsets.get_unchecked(self.index + 1) }.to_usize();
-            self.index += 1;
+        if self.cur_offset != self.max_offset {
+            // SAFETY: `cur_offset != max_offset` guarantees at least one string
+            // remains, so both `cur_offset` and `cur_offset + 1` are valid.
+            let start = unsafe { (*self.cur_offset).to_usize() };
+            self.cur_offset = unsafe { self.cur_offset.add(1) };
+            let end = unsafe { (*self.cur_offset).to_usize() };
+            self.remaining -= 1;
 
             // Const generic: default (`false`) folds `saturating_sub(0)` to `end`.
             let logical_end = end.saturating_sub(usize::from(NULL_PADDED));
             debug_assert!(logical_end >= start);
 
-            // SAFETY: Pool invariants guarantee this slice is valid UTF-8.
-            Some(unsafe { str::from_utf8_unchecked(&self.bytes[start..logical_end]) })
+            // SAFETY: Pool invariants guarantee this slice is in bounds and valid UTF-8.
+            let bytes = unsafe { self.bytes.get_unchecked(start..logical_end) };
+            Some(unsafe { str::from_utf8_unchecked(bytes) })
         } else {
             None
         }
@@ -333,7 +343,7 @@ impl<'a, O: Offset, const NULL_PADDED: bool> Iterator for StringTableIter<'a, O,
 impl<O: Offset, const NULL_PADDED: bool> ExactSizeIterator for StringTableIter<'_, O, NULL_PADDED> {
     #[inline]
     fn len(&self) -> usize {
-        self.offsets.len().saturating_sub(1 + self.index)
+        self.remaining
     }
 }
 
