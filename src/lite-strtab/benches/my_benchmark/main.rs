@@ -35,7 +35,6 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
         "get",
         "",
         total_bytes,
-        string_count,
         &table,
         Some(&table_null_padded),
         &vec_strings,
@@ -48,7 +47,6 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
         "get_unchecked",
         "",
         total_bytes,
-        string_count,
         &table,
         Some(&table_null_padded),
         &vec_strings,
@@ -62,7 +60,6 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
         "get_u8",
         "_u8",
         total_bytes,
-        string_count,
         &table,
         None,
         &vec_strings,
@@ -75,7 +72,6 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
         "get_u8_unchecked",
         "_u8",
         total_bytes,
-        string_count,
         &table,
         None,
         &vec_strings,
@@ -89,7 +85,6 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
         "get_usize",
         "_usize",
         total_bytes,
-        string_count,
         &table,
         None,
         &vec_strings,
@@ -102,7 +97,43 @@ fn run_dataset_benchmarks(c: &mut Criterion, dataset_name: &str, dataset: &Datas
         "get_usize_unchecked",
         "_usize",
         total_bytes,
-        string_count,
+        &table,
+        None,
+        &vec_strings,
+        &boxed_str_slice,
+        observe_str_usize,
+    );
+
+    bench_iter_group(
+        c,
+        dataset_name,
+        "iter",
+        "",
+        total_bytes,
+        &table,
+        Some(&table_null_padded),
+        &vec_strings,
+        &boxed_str_slice,
+        observe_str_ahash,
+    );
+    bench_iter_group(
+        c,
+        dataset_name,
+        "iter_u8",
+        "_u8",
+        total_bytes,
+        &table,
+        None,
+        &vec_strings,
+        &boxed_str_slice,
+        observe_str_u8,
+    );
+    bench_iter_group(
+        c,
+        dataset_name,
+        "iter_usize",
+        "_usize",
+        total_bytes,
         &table,
         None,
         &vec_strings,
@@ -186,7 +217,6 @@ fn bench_get_group<F>(
     group_name_suffix: &str,
     benchmark_name_suffix: &str,
     total_bytes: usize,
-    string_count: usize,
     table: &StringTable<u32, u32>,
     table_null_padded: Option<&StringTable<u32, u32, true>>,
     vec_strings: &[String],
@@ -201,7 +231,7 @@ fn bench_get_group<F>(
     group.bench_function(format!("vec_string_for_loop{benchmark_name_suffix}"), |b| {
         b.iter(|| {
             let mut checksum = 0usize;
-            for index in 0..string_count {
+            for index in 0..vec_strings.len() {
                 let value = vec_strings
                     .get(index)
                     .expect("benchmark index out of bounds");
@@ -215,7 +245,7 @@ fn bench_get_group<F>(
         |b| {
             b.iter(|| {
                 let mut checksum = 0usize;
-                for index in 0..string_count {
+                for index in 0..boxed_str_slice.len() {
                     let value = boxed_str_slice
                         .get(index)
                         .expect("benchmark index out of bounds")
@@ -231,7 +261,7 @@ fn bench_get_group<F>(
         |b| {
             b.iter(|| {
                 let mut checksum = 0usize;
-                for index in 0..string_count {
+                for index in 0..table.len() {
                     let id = StringId::new(index as u32);
                     let value = table.get(id).expect("benchmark id out of bounds");
                     checksum = checksum.wrapping_add(observe(value));
@@ -246,7 +276,7 @@ fn bench_get_group<F>(
             |b| {
                 b.iter(|| {
                     let mut checksum = 0usize;
-                    for index in 0..string_count {
+                    for index in 0..table_null_padded.len() {
                         let id = StringId::new(index as u32);
                         let value = table_null_padded
                             .get(id)
@@ -268,7 +298,6 @@ fn bench_get_unchecked_group<F>(
     group_name_suffix: &str,
     benchmark_name_suffix: &str,
     total_bytes: usize,
-    string_count: usize,
     table: &StringTable<u32, u32>,
     table_null_padded: Option<&StringTable<u32, u32, true>>,
     vec_strings: &[String],
@@ -285,7 +314,7 @@ fn bench_get_unchecked_group<F>(
         |b| {
             b.iter(|| {
                 let mut checksum = 0usize;
-                for index in 0..string_count {
+                for index in 0..vec_strings.len() {
                     let value = unsafe { vec_strings.get_unchecked(index) };
                     checksum = checksum.wrapping_add(observe(value));
                 }
@@ -298,7 +327,7 @@ fn bench_get_unchecked_group<F>(
         |b| {
             b.iter(|| {
                 let mut checksum = 0usize;
-                for index in 0..string_count {
+                for index in 0..boxed_str_slice.len() {
                     let value = unsafe { boxed_str_slice.get_unchecked(index) }.as_ref();
                     checksum = checksum.wrapping_add(observe(value));
                 }
@@ -311,7 +340,7 @@ fn bench_get_unchecked_group<F>(
         |b| {
             b.iter(|| {
                 let mut checksum = 0usize;
-                for index in 0..string_count {
+                for index in 0..table.len() {
                     let id = StringId::new(index as u32);
                     let value = unsafe { table.get_unchecked(id) };
                     checksum = checksum.wrapping_add(observe(value));
@@ -326,9 +355,74 @@ fn bench_get_unchecked_group<F>(
             |b| {
                 b.iter(|| {
                     let mut checksum = 0usize;
-                    for index in 0..string_count {
+                    for index in 0..table_null_padded.len() {
                         let id = StringId::new(index as u32);
                         let value = unsafe { table_null_padded.get_unchecked(id) };
+                        checksum = checksum.wrapping_add(observe(value));
+                    }
+                    black_box(checksum)
+                })
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn bench_iter_group<F>(
+    c: &mut Criterion,
+    dataset_name: &str,
+    group_name_suffix: &str,
+    benchmark_name_suffix: &str,
+    total_bytes: usize,
+    table: &StringTable<u32, u32>,
+    table_null_padded: Option<&StringTable<u32, u32, true>>,
+    vec_strings: &[String],
+    boxed_str_slice: &[Box<str>],
+    observe: F,
+) where
+    F: Fn(&str) -> usize + Copy,
+{
+    let mut group = c.benchmark_group(format!("{dataset_name}/{group_name_suffix}"));
+    group.throughput(Throughput::Bytes(total_bytes as u64));
+
+    group.bench_function(format!("vec_string_iter{benchmark_name_suffix}"), |b| {
+        b.iter(|| {
+            let mut checksum = 0usize;
+            for value in vec_strings.iter() {
+                checksum = checksum.wrapping_add(observe(value));
+            }
+            black_box(checksum)
+        })
+    });
+    group.bench_function(
+        format!("boxed_str_slice_iter{benchmark_name_suffix}"),
+        |b| {
+            b.iter(|| {
+                let mut checksum = 0usize;
+                for value in boxed_str_slice.iter() {
+                    checksum = checksum.wrapping_add(observe(value.as_ref()));
+                }
+                black_box(checksum)
+            })
+        },
+    );
+    group.bench_function(format!("lite_strtab_iter{benchmark_name_suffix}"), |b| {
+        b.iter(|| {
+            let mut checksum = 0usize;
+            for value in table.iter() {
+                checksum = checksum.wrapping_add(observe(value));
+            }
+            black_box(checksum)
+        })
+    });
+    if let Some(table_null_padded) = table_null_padded {
+        group.bench_function(
+            format!("lite_strtab_iter{benchmark_name_suffix}_null_padded"),
+            |b| {
+                b.iter(|| {
+                    let mut checksum = 0usize;
+                    for value in table_null_padded.iter() {
                         checksum = checksum.wrapping_add(observe(value));
                     }
                     black_box(checksum)
