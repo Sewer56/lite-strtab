@@ -265,37 +265,95 @@ One-time metadata (table object itself)
 
 In this benchmark we sequentially read all of the 4,650 strings (238,109 bytes).
 
+By:
+- Getting the `&str` with `get` / `get_unchecked`
+- Reading the `&str` data to compute a value (i.e. hashing).
+  - This factors the other hidden costs such as memory alignment, etc. 
+
 #### AHash payload read (`get` / `get_unchecked`)
 
 Hashing the data with `AHash`, a realistic real world workload.
 
 | Access          | Representation              | avg time (µs) | avg thrpt (GiB/s) |
 | --------------- | --------------------------- | ------------- | ----------------- |
-| `get`           | `Vec<String>`               | 13.461        | 16.474            |
-| `get`           | `Box<[Box<str>]>`           | 13.262        | 16.721            |
-| `get`           | `lite-strtab`               | 14.177        | 15.642            |
-| `get`           | `lite-strtab (null-padded)` | 14.742        | 15.043            |
-| `get_unchecked` | `Vec<String>`               | 13.007        | 17.049            |
-| `get_unchecked` | `Box<[Box<str>]>`           | 12.942        | 17.134            |
-| `get_unchecked` | `lite-strtab`               | 15.160        | 14.628            |
-| `get_unchecked` | `lite-strtab (null-padded)` | 14.710        | 15.075            |
+| `get`           | `Vec<String>`               | 13.561        | 16.352            |
+| `get`           | `Box<[Box<str>]>`           | 13.002        | 17.056            |
+| `get`           | `lite-strtab`               | 13.368        | 16.589            |
+| `get`           | `lite-strtab (null-padded)` | 13.714        | 16.171            |
+| `get_unchecked` | `Vec<String>`               | 13.448        | 16.490            |
+| `get_unchecked` | `Box<[Box<str>]>`           | 12.812        | 17.308            |
+| `get_unchecked` | `lite-strtab`               | 13.207        | 16.790            |
+| `get_unchecked` | `lite-strtab (null-padded)` | 13.828        | 16.037            |
 
-More benches in codebase.
+#### Byte-by-byte read (`get_u8` / `get_u8_unchecked`)
+
+Summing bytes one at a time.
+
+| Access             | Representation    | avg time (µs) | avg thrpt (GiB/s) |
+| ------------------ | ----------------- | ------------- | ----------------- |
+| `get_u8`           | `Vec<String>`     | 18.979        | 11.684            |
+| `get_u8`           | `Box<[Box<str>]>` | 18.778        | 11.809            |
+| `get_u8`           | `lite-strtab`     | 23.245        | 9.540             |
+| `get_u8_unchecked` | `Vec<String>`     | 18.928        | 11.716            |
+| `get_u8_unchecked` | `Box<[Box<str>]>` | 18.861        | 11.758            |
+| `get_u8_unchecked` | `lite-strtab`     | 19.008        | 11.666            |
+
+#### Chunked read (`get_usize` / `get_usize_unchecked`)
+
+Reading data in `usize` chunks; then `u8` for the remainder.
+
+| Access                | Representation    | avg time (µs) | avg thrpt (GiB/s) |
+| --------------------- | ----------------- | ------------- | ----------------- |
+| `get_usize`           | `Vec<String>`     | 8.219         | 26.982            |
+| `get_usize`           | `Box<[Box<str>]>` | 8.234         | 26.932            |
+| `get_usize`           | `lite-strtab`     | 8.038         | 27.590            |
+| `get_usize_unchecked` | `Vec<String>`     | 8.167         | 27.154            |
+| `get_usize_unchecked` | `Box<[Box<str>]>` | 8.402         | 26.393            |
+| `get_usize_unchecked` | `lite-strtab`     | 8.042         | 27.575            |
+
+#### Iterator (`iter` / `iter_u8` / `iter_usize`)
+
+Using native iterators where available.
+
+| Style   | Representation              | avg time (µs) | avg thrpt (GiB/s) |
+| ------- | --------------------------- | ------------- | ----------------- |
+| `ahash` | `Vec<String>`               | 12.387        | 17.902            |
+| `ahash` | `Box<[Box<str>]>`           | 12.145        | 18.259            |
+| `ahash` | `lite-strtab`               | 12.897        | 17.195            |
+| `ahash` | `lite-strtab (null-padded)` | 14.774        | 15.010            |
+| `u8`    | `Vec<String>`               | 17.998        | 12.321            |
+| `u8`    | `Box<[Box<str>]>`           | 17.916        | 12.378            |
+| `u8`    | `lite-strtab`               | 17.617        | 12.588            |
+| `usize` | `Vec<String>`               | 7.751         | 28.610            |
+| `usize` | `Box<[Box<str>]>`           | 7.845         | 28.268            |
+| `usize` | `lite-strtab`               | 7.588         | 29.226            |
+
 Reproduce with `cargo bench --bench my_benchmark`.
 This was ran on Linux w/ glibc.
 
-You may notice read perf is down ~5-8% in read tests.
+In summary, actual read performance on real data is within margin of error.
 
-- Generally speaking, the time to get the `&str` is negligible.
-- It is actually reading the data that far outweighs it.
+The overhead of looking up a string by ID is negligible.
+Any difference you see is mostly due to run to run variation.
 
-The cause of the difference here is allocation alignment. The standard containers
-will allocate start of each string on at least a `usize` boundary; which improves
-read performance by avoiding unaligned accesses.
+I've experimented with data alignment too, but saw no notable difference in practice
+after aligning to `usize` boundaries to avoid reads across word boundaries.
+There may be some in random access patterns; I've only benched sequential here.
 
-In this case we treat reduced heap size (see above) in exchange for some read speed.
-If you wanted the speed back, just modify this crate to add some alignment 😉,
-but in my case it's not needed, as the data isn't accessed super often.
+### Assembly comparison
+
+Instruction count to get `&str`, x86_64, release mode:
+
+| Method                           | Instructions | Access Pattern                                           |
+| -------------------------------- | ------------ | -------------------------------------------------------- |
+| `lite-strtab::get`               | ~12          | bounds check → load 2 offsets → compute range → add base |
+| `lite-strtab::get_unchecked`     | ~7           | load 2 offsets → compute range → add base                |
+| `Vec<String>::get`               | ~8           | bounds check → load ptr from heap → deref for (ptr, len) |
+| `Vec<String>::get_unchecked`     | ~5           | load ptr from heap → deref for (ptr, len)                |
+| `Box<[Box<str>]>::get`           | ~7           | bounds check → load ptr → deref for (ptr, len)           |
+| `Box<[Box<str>]>::get_unchecked` | ~4           | load ptr → deref for (ptr, len)                          |
+
+Overhead of processing the data largely dominates; so the difference here is negligible.
 
 ## License
 

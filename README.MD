@@ -32,7 +32,8 @@ let table = builder.build();
 assert_eq!(table.get(id), Some("hello"));
 ```
 
-See [full crate docs](src/lite-strtab/README.MD) for more details.
+***See [full crate docs](src/lite-strtab/README.MD)*** for more details.
+This page is a summary.
 
 ## Memory Usage
 
@@ -51,27 +52,30 @@ This keeps the comparison close to real application layouts while still keeping 
 
 **YakuzaKiwami** (4,650 game file paths, 238,109 bytes):
 
-| Representation    | Total               | Heap allocations    | Distributed fields  | vs lite-strtab |
-| ----------------- | ------------------- | ------------------- | ------------------- | -------------- |
-| `lite-strtab`     | 266068 (259.83 KiB) | 256736 (250.72 KiB) | 9300 (9.08 KiB)     | 1.00x          |
-| `Vec<String>`     | 384240 (375.23 KiB) | 272640 (266.25 KiB) | 111600 (108.98 KiB) | 1.44x          |
-| `Box<[Box<str>]>` | 346928 (338.80 KiB) | 272528 (266.14 KiB) | 74400 (72.66 KiB)   | 1.30x          |
+| Representation              | Total               | Heap allocations    | Distributed fields  | vs lite-strtab |
+| --------------------------- | ------------------- | ------------------- | ------------------- | -------------- |
+| `lite-strtab`               | 266068 (259.83 KiB) | 256736 (250.72 KiB) | 9300 (9.08 KiB)     | 1.00x          |
+| `lite-strtab (null-padded)` | 270708 (264.36 KiB) | 261376 (255.25 KiB) | 9300 (9.08 KiB)     | 1.02x          |
+| `Vec<String>`               | 384240 (375.23 KiB) | 272640 (266.25 KiB) | 111600 (108.98 KiB) | 1.44x          |
+| `Box<[Box<str>]>`           | 346928 (338.80 KiB) | 272528 (266.14 KiB) | 74400 (72.66 KiB)   | 1.30x          |
 
 **EnvKeys** (109 environment variable names, 1,795 bytes):
 
-| Representation    | Total           | Heap allocations | Distributed fields | vs lite-strtab |
-| ----------------- | --------------- | ---------------- | ------------------ | -------------- |
-| `lite-strtab`     | 2490 (2.43 KiB) | 2240 (2.19 KiB)  | 218 B              | 1.00x          |
-| `Vec<String>`     | 5504 (5.38 KiB) | 2888 (2.82 KiB)  | 2616 (2.55 KiB)    | 2.21x          |
-| `Box<[Box<str>]>` | 4472 (4.37 KiB) | 2728 (2.66 KiB)  | 1744 (1.70 KiB)    | 1.80x          |
+| Representation              | Total           | Heap allocations | Distributed fields | vs lite-strtab |
+| --------------------------- | --------------- | ---------------- | ------------------ | -------------- |
+| `lite-strtab`               | 2490 (2.43 KiB) | 2240 (2.19 KiB)  | 218 B              | 1.00x          |
+| `lite-strtab (null-padded)` | 2602 (2.54 KiB) | 2352 (2.30 KiB)  | 218 B              | 1.04x          |
+| `Vec<String>`               | 5440 (5.31 KiB) | 2824 (2.76 KiB)  | 2616 (2.55 KiB)    | 2.18x          |
+| `Box<[Box<str>]>`           | 4472 (4.37 KiB) | 2728 (2.66 KiB)  | 1744 (1.70 KiB)    | 1.80x          |
 
 **ApiUrls** (90 API endpoint URLs, 3,970 bytes):
 
-| Representation    | Total           | Heap allocations | Distributed fields | vs lite-strtab |
-| ----------------- | --------------- | ---------------- | ------------------ | -------------- |
-| `lite-strtab`     | 4564 (4.46 KiB) | 4352 (4.25 KiB)  | 180 B              | 1.00x          |
-| `Vec<String>`     | 6896 (6.73 KiB) | 4736 (4.62 KiB)  | 2160 (2.11 KiB)    | 1.51x          |
-| `Box<[Box<str>]>` | 6112 (5.97 KiB) | 4672 (4.56 KiB)  | 1440 (1.41 KiB)    | 1.34x          |
+| Representation              | Total           | Heap allocations | Distributed fields | vs lite-strtab |
+| --------------------------- | --------------- | ---------------- | ------------------ | -------------- |
+| `lite-strtab`               | 4564 (4.46 KiB) | 4352 (4.25 KiB)  | 180 B              | 1.00x          |
+| `lite-strtab (null-padded)` | 4660 (4.55 KiB) | 4448 (4.34 KiB)  | 180 B              | 1.02x          |
+| `Vec<String>`               | 6896 (6.73 KiB) | 4736 (4.62 KiB)  | 2160 (2.11 KiB)    | 1.51x          |
+| `Box<[Box<str>]>`           | 6112 (5.97 KiB) | 4672 (4.56 KiB)  | 1440 (1.41 KiB)    | 1.34x          |
 
 For complete comparisons across all datasets and full breakdown details, see [full crate docs](src/lite-strtab/README.MD#memory-comparison-results).
 
@@ -86,29 +90,40 @@ and hash them with `AHash` to simulate a realistic workload that involves readin
 
 | Access          | Representation              | avg time (µs) | avg thrpt (GiB/s) |
 | --------------- | --------------------------- | ------------- | ----------------- |
-| `get`           | `Vec<String>`               | 13.461        | 16.474            |
-| `get`           | `Box<[Box<str>]>`           | 13.262        | 16.721            |
-| `get`           | `lite-strtab`               | 14.177        | 15.642            |
-| `get`           | `lite-strtab (null-padded)` | 14.742        | 15.043            |
-| `get_unchecked` | `Vec<String>`               | 13.007        | 17.049            |
-| `get_unchecked` | `Box<[Box<str>]>`           | 12.942        | 17.134            |
-| `get_unchecked` | `lite-strtab`               | 15.160        | 14.628            |
-| `get_unchecked` | `lite-strtab (null-padded)` | 14.710        | 15.075            |
+| `get`           | `Vec<String>`               | 13.561        | 16.352            |
+| `get`           | `Box<[Box<str>]>`           | 13.002        | 17.056            |
+| `get`           | `lite-strtab`               | 13.368        | 16.589            |
+| `get`           | `lite-strtab (null-padded)` | 13.714        | 16.171            |
+| `get_unchecked` | `Vec<String>`               | 13.448        | 16.490            |
+| `get_unchecked` | `Box<[Box<str>]>`           | 12.812        | 17.308            |
+| `get_unchecked` | `lite-strtab`               | 13.207        | 16.790            |
+| `get_unchecked` | `lite-strtab (null-padded)` | 13.828        | 16.037            |
 
 Reproduce with `cargo bench --bench my_benchmark`. Linux glibc.
 
-You may notice read perf is down ~5-8% in read tests.
+In summary, actual read performance on real data is within margin of error.
 
-- Generally speaking, the time to get the `&str` is negligible. 
-- It is actually reading the data that far outweighs it.
+The overhead of looking up a string by ID is negligible.
+Any difference you see is mostly due to run to run variation.
 
-The cause of the difference here is allocation alignment. The standard containers
-will allocate start of each string on at least a `usize` boundary; which improves
-read performance by avoiding unaligned accesses.
+I've experimented with data alignment too, but saw no notable difference in practice
+after aligning to `usize` boundaries to avoid reads across word boundaries.
+There may be some in random access patterns; I've only benched sequential here.
 
-In this case we treat reduced heap size (see above) in exchange for some read speed.
-If you wanted the speed back, just modify this crate to add some alignment 😉,
-but in my case it's not needed, as the data isn't accessed super often.
+### Assembly comparison
+
+Instruction count to get `&str`, x86_64, release mode:
+
+| Method                           | Instructions | Access Pattern                                           |
+| -------------------------------- | ------------ | -------------------------------------------------------- |
+| `lite-strtab::get`               | ~12          | bounds check → load 2 offsets → compute range → add base |
+| `lite-strtab::get_unchecked`     | ~7           | load 2 offsets → compute range → add base                |
+| `Vec<String>::get`               | ~8           | bounds check → load ptr from heap → deref for (ptr, len) |
+| `Vec<String>::get_unchecked`     | ~5           | load ptr from heap → deref for (ptr, len)                |
+| `Box<[Box<str>]>::get`           | ~7           | bounds check → load ptr → deref for (ptr, len)           |
+| `Box<[Box<str>]>::get_unchecked` | ~4           | load ptr → deref for (ptr, len)                          |
+
+Overhead of processing the data largely dominates; so the difference here is negligible.
 
 ## License
 
