@@ -217,8 +217,8 @@ fn bench_get_group<F>(
     group_name_suffix: &str,
     benchmark_name_suffix: &str,
     total_bytes: usize,
-    table: &StringTable<u32, u32>,
-    table_null_padded: Option<&StringTable<u32, u32, true>>,
+    table: &StringTable<u32, u16>,
+    table_null_padded: Option<&StringTable<u32, u16, true>>,
     vec_strings: &[String],
     boxed_str_slice: &[Box<str>],
     observe: F,
@@ -262,7 +262,7 @@ fn bench_get_group<F>(
             b.iter(|| {
                 let mut checksum = 0usize;
                 for index in 0..table.len() {
-                    let id = StringId::new(index as u32);
+                    let id = StringId::new(index as u16);
                     let value = table.get(id).expect("benchmark id out of bounds");
                     checksum = checksum.wrapping_add(observe(value));
                 }
@@ -277,7 +277,7 @@ fn bench_get_group<F>(
                 b.iter(|| {
                     let mut checksum = 0usize;
                     for index in 0..table_null_padded.len() {
-                        let id = StringId::new(index as u32);
+                        let id = StringId::new(index as u16);
                         let value = table_null_padded
                             .get(id)
                             .expect("benchmark id out of bounds");
@@ -298,8 +298,8 @@ fn bench_get_unchecked_group<F>(
     group_name_suffix: &str,
     benchmark_name_suffix: &str,
     total_bytes: usize,
-    table: &StringTable<u32, u32>,
-    table_null_padded: Option<&StringTable<u32, u32, true>>,
+    table: &StringTable<u32, u16>,
+    table_null_padded: Option<&StringTable<u32, u16, true>>,
     vec_strings: &[String],
     boxed_str_slice: &[Box<str>],
     observe: F,
@@ -341,7 +341,7 @@ fn bench_get_unchecked_group<F>(
             b.iter(|| {
                 let mut checksum = 0usize;
                 for index in 0..table.len() {
-                    let id = StringId::new(index as u32);
+                    let id = StringId::new(index as u16);
                     let value = unsafe { table.get_unchecked(id) };
                     checksum = checksum.wrapping_add(observe(value));
                 }
@@ -356,7 +356,7 @@ fn bench_get_unchecked_group<F>(
                 b.iter(|| {
                     let mut checksum = 0usize;
                     for index in 0..table_null_padded.len() {
-                        let id = StringId::new(index as u32);
+                        let id = StringId::new(index as u16);
                         let value = unsafe { table_null_padded.get_unchecked(id) };
                         checksum = checksum.wrapping_add(observe(value));
                     }
@@ -375,8 +375,8 @@ fn bench_iter_group<F>(
     group_name_suffix: &str,
     benchmark_name_suffix: &str,
     total_bytes: usize,
-    table: &StringTable<u32, u32>,
-    table_null_padded: Option<&StringTable<u32, u32, true>>,
+    table: &StringTable<u32, u16>,
+    table_null_padded: Option<&StringTable<u32, u16, true>>,
     vec_strings: &[String],
     boxed_str_slice: &[Box<str>],
     observe: F,
@@ -463,7 +463,7 @@ fn load_dataset(dataset_path: &str) -> Dataset {
     }
 }
 
-fn build_table(entries: &[String], total_bytes: usize) -> StringTable<u32, u32> {
+fn build_table(entries: &[String], total_bytes: usize) -> StringTable<u32, u16> {
     let mut builder = StringTableBuilder::<u32>::with_capacity(entries.len(), total_bytes);
     for value in entries {
         builder
@@ -473,7 +473,7 @@ fn build_table(entries: &[String], total_bytes: usize) -> StringTable<u32, u32> 
     builder.build()
 }
 
-fn build_table_null_padded(entries: &[String], total_bytes: usize) -> StringTable<u32, u32, true> {
+fn build_table_null_padded(entries: &[String], total_bytes: usize) -> StringTable<u32, u16, true> {
     let mut builder = StringTableBuilder::with_capacity_null_padded(
         entries.len(),
         total_bytes.saturating_add(entries.len()),

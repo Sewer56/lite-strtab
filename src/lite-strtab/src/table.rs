@@ -20,7 +20,7 @@ use crate::error::{ValidationError, ValidationResult};
 use crate::{Offset, StringId, StringIndex};
 
 /// Alias for [`StringTable`].
-pub type StringPool<O = u32, I = u32, const NULL_PADDED: bool = false, A = Global> =
+pub type StringPool<O = u32, I = u16, const NULL_PADDED: bool = false, A = Global> =
     StringTable<O, I, NULL_PADDED, A>;
 
 /// Alias for [`StringTableIter`].
@@ -39,8 +39,22 @@ pub type StringPoolIter<'a, O = u32, const NULL_PADDED: bool = false> =
 /// equal to `bytes.len()`. This allows `get` to resolve a range with two
 /// offset reads.
 ///
-/// By default offsets and IDs use [`u32`], and strings are not NUL-padded.
-/// Set `NULL_PADDED = true` if strings are stored with a trailing NUL byte.
+/// Generic parameters control capacity and metadata size:
+/// - `O` is the byte-offset type (see [`Offset`]). It bounds total UTF-8 bytes and costs
+///   `size_of::<O>()` per string inside the [`crate::StringTable`].
+/// - `I` is the string-ID type (see [`StringIndex`]) used by [`crate::StringId`].
+///   It limits string count and costs `size_of::<I>()` per stored ID field
+///   (table index) in your own structs.
+///
+/// The common choice is `O = u32, I = u16`: meaning `4 GiB` of UTF-8 data
+/// and `64Ki` entries per table.
+///
+/// This is 4 bytes per string offset in the table and 2 bytes
+/// per StringID (index into table) inside your structs.
+/// For comparison: `Box<str>` == 16 bytes, `String` == 24 bytes.
+///
+/// By default, inserted strings are not NUL-terminated.
+/// Set `NULL_PADDED = true` to store strings with a trailing NUL byte.
 ///
 /// # Example
 ///
@@ -57,7 +71,7 @@ pub type StringPoolIter<'a, O = u32, const NULL_PADDED: bool = false> =
 /// ```
 pub struct StringTable<
     O = u32,
-    I = u32,
+    I = u16,
     const NULL_PADDED: bool = false,
     A: Allocator + Clone = Global,
 > where
@@ -69,7 +83,7 @@ pub struct StringTable<
     _id: PhantomData<I>,
 }
 
-impl StringTable<u32, u32, false, Global> {
+impl StringTable<u32, u16, false, Global> {
     /// Creates an empty table using the global allocator.
     #[inline]
     pub fn empty() -> Self {

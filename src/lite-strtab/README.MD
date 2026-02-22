@@ -20,8 +20,8 @@ As simple as that.
 - `CPU`: cheap ID-based lookups (bounds check + two offset reads)
 - `Binary size`: no panics on insertion, avoiding backtrace overhead
 
-Data types for e.g. offsets, string IDs, etc. can be swapped out for
-smaller/larger ones as needed; to adapt to your required data size/count.
+Offset and ID types are configurable to match your workload.
+The common choice is `O = u32` and `I = u16`.
 
 ## Why this exists
 
@@ -71,6 +71,34 @@ assert_eq!(table.get(hello), Some("hello"));
 assert_eq!(table.get(world), Some("world"));
 ```
 
+## Choosing `O` and `I`
+
+`StringTableBuilder<O, I>` has two size/capacity knobs:
+
+- `O` ([`Offset`]) stores byte offsets into the shared UTF-8 buffer.
+  - It limits total stored bytes.
+  - It costs `size_of::<O>()` per string inside the [`StringTable`].
+- `I` ([`StringIndex`], used by [`StringId`]) stores string IDs.
+  - It limits string count.
+  - It costs `size_of::<I>()` per stored ID field (table index) in your own
+    structs.
+
+Most users should start with `O = u32, I = u16`:
+
+- Meaning about `4 GiB` of UTF-8 data and `64Ki` entries per table
+- Meaning: 2 bytes per `StringId` (index into table) in your own structs
+    - Comparison (64-bit): `Box<str>` handle is 16 bytes, `String` is 24 bytes
+
+Capacity quick-reference:
+
+| Setting   | Bytes | Max value       | Practical meaning in this crate         |
+| --------- | ----- | --------------- | --------------------------------------- |
+| `I = u8`  | 1     | `255`           | Up to `256` strings per table           |
+| `I = u16` | 2     | `65,535`        | Up to `65,536` strings per table        |
+| `I = u32` | 4     | `4,294,967,295` | Up to `4,294,967,296` strings per table |
+| `O = u16` | 2     | `65,535`        | Up to `65,535` UTF-8 bytes total        |
+| `O = u32` | 4     | `4,294,967,295` | Up to about `4 GiB` UTF-8 bytes total   |
+
 ## Custom allocator
 
 ```rust
@@ -84,20 +112,7 @@ let table = builder.build();
 assert_eq!(table.get(id), Some("example"));
 ```
 
-## Custom offset type
-
-```rust
-# #![cfg_attr(feature = "nightly", feature(allocator_api))]
-use lite_strtab::{Global, StringTableBuilder};
-
-let mut builder = StringTableBuilder::<u16>::new_in(Global);
-let id = builder.try_push("small").unwrap();
-let table = builder.build();
-
-assert_eq!(table.get(id), Some("small"));
-```
-
-## Custom [`StringId`] type
+## Custom `O` and `I` types
 
 ```rust
 # #![cfg_attr(feature = "nightly", feature(allocator_api))]
@@ -110,6 +125,9 @@ let table = builder.build();
 assert_eq!(id.into_raw(), 0u8);
 assert_eq!(table.get(id), Some("tiny-id"));
 ```
+
+If you only want to change `O`, use `StringTableBuilder::<u16>::new_in(Global)`
+and `I` keeps its default (`u16`).
 
 ## Null-padded mode
 
@@ -362,5 +380,9 @@ MIT
 
 [`Box<[Box<str>]>`]: alloc::boxed::Box
 [`Box<[String]>`]: alloc::boxed::Box
+[`Offset`]: crate::Offset
 [`StringId`]: crate::StringId
+[`StringIndex`]: crate::StringIndex
+[`StringTable`]: crate::StringTable
+[`u16`]: prim@u16
 [`u32`]: prim@u32

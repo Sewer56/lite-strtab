@@ -10,7 +10,7 @@ use crate::allocator::*;
 use crate::{Error, Offset, Result, StringId, StringIndex, StringTable};
 
 /// Alias for [`StringTableBuilder`].
-pub type StringPoolBuilder<O = u32, I = u32, const NULL_PADDED: bool = false, A = Global> =
+pub type StringPoolBuilder<O = u32, I = u16, const NULL_PADDED: bool = false, A = Global> =
     StringTableBuilder<O, I, NULL_PADDED, A>;
 
 /// Incremental builder for [`crate::StringTable`].
@@ -18,12 +18,25 @@ pub type StringPoolBuilder<O = u32, I = u32, const NULL_PADDED: bool = false, A 
 /// Each call to [`Self::try_push`] appends string bytes to a single byte buffer and
 /// appends one offset.
 ///
-/// By default offsets and IDs use [`u32`], and inserted strings are not
-/// NUL-terminated. Set `NULL_PADDED = true` to store strings with a trailing
-/// NUL byte.
+/// Generic parameters control capacity and metadata size:
+/// - `O` is the byte-offset type (see [`Offset`]). It bounds total UTF-8 bytes and costs
+///   `size_of::<O>()` per string inside the [`crate::StringTable`].
+/// - `I` is the string-ID type (see [`StringIndex`]) used by [`crate::StringId`].
+///   It limits string count and costs `size_of::<I>()` per stored ID field
+///   (table index) in your own structs.
+///
+/// The common choice is `O = u32, I = u16`: meaning `4 GiB` of UTF-8 data
+/// and `64Ki` entries per table.
+///
+/// This is 4 bytes per string offset in the table and 2 bytes
+/// per StringID (index into table) inside your structs.
+/// For comparison: `Box<str>` == 16 bytes, `String` == 24 bytes.
+///
+/// By default, inserted strings are not NUL-terminated.
+/// Set `NULL_PADDED = true` to store strings with a trailing NUL byte.
 pub struct StringTableBuilder<
     O = u32,
-    I = u32,
+    I = u16,
     const NULL_PADDED: bool = false,
     A: Allocator + Clone = Global,
 > where
@@ -35,7 +48,7 @@ pub struct StringTableBuilder<
     _id: PhantomData<I>,
 }
 
-impl StringTableBuilder<u32, u32, false, Global> {
+impl StringTableBuilder<u32, u16, false, Global> {
     /// Creates an empty builder using the global allocator.
     #[inline]
     pub fn new() -> Self {
@@ -52,14 +65,14 @@ impl StringTableBuilder<u32, u32, false, Global> {
     }
 }
 
-impl Default for StringTableBuilder<u32, u32, false, Global> {
+impl Default for StringTableBuilder<u32, u16, false, Global> {
     #[inline]
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl StringTableBuilder<u32, u32, true, Global> {
+impl StringTableBuilder<u32, u16, true, Global> {
     /// Creates an empty builder with null-padded mode using the global allocator.
     #[inline]
     pub fn new_null_padded() -> Self {

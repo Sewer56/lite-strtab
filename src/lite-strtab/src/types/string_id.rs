@@ -10,12 +10,12 @@ use core::fmt;
 
 /// Identifier for one string in a [`crate::StringTable`].
 ///
-/// `I` is the backing integer type (default [`u32`]) and must implement
-/// [`crate::StringIndex`]. The value is table-local and indexes the table's
-/// offset entries.
+/// `I` is the backing integer type (default [`u16`]) and must implement
+/// [`crate::StringIndex`]. It limits how many strings a single table can hold,
+/// and it is what you store in your own structs to later refer to a string.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StringId<I = u32>(I);
+pub struct StringId<I = u16>(I);
 
 impl<I> StringId<I> {
     /// Creates a new ID from a raw value.

@@ -5,7 +5,7 @@
 //! Smaller types reduce memory per ID; larger types increase maximum string
 //! count.
 //!
-//! Default [`u32`] supports up to 4_294_967_295 strings per table.
+//! Default [`u16`] supports up to 65_536 strings per table.
 
 use core::fmt::{Debug, Display};
 
