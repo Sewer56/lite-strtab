@@ -17,13 +17,13 @@ pub struct ModelIdx(u16);
 #[repr(transparent)]
 pub struct ByteOffset32(u32);
 
-/// Offset wrapper type for larger tables.
+/// Offset wrapper type (usize variant for cross-platform compatibility).
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-pub struct ByteOffset64(u64);
+pub struct ByteOffsetUsize(usize);
 
 impl_string_index!(ProviderIdx: u16, ModelIdx: u16);
-impl_offset!(ByteOffset32: u32, ByteOffset64: u64);
+impl_offset!(ByteOffset32: u32, ByteOffsetUsize: usize);
 
 fn _compilation_test() {
     let mut builder: StringTableBuilder<u32, ProviderIdx> =
