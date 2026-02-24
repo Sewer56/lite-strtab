@@ -7,19 +7,28 @@
 //!
 //! Default [`u16`] supports up to 65_536 strings per table.
 
-use core::fmt::{Debug, Display};
-
 /// Contract for integer types used by [`crate::StringId`].
 ///
 /// [`Self::try_from_usize`] is used at build and validation boundaries where
 /// counts are computed as [`usize`]. [`Self::to_usize`] is used on lookup paths
 /// for infallible indexing.
 ///
-/// This trait is sealed and only implemented for unsigned integers that fit in
-/// [`usize`] on the current target.
-pub trait StringIndex:
-    private::Sealed + Copy + Eq + Ord + Debug + Display + Send + Sync + 'static
-{
+/// # Implementing this trait
+///
+/// This trait is already implemented for primitive unsigned integers (`u8`, `u16`, `u32`,
+/// `u64`, `usize`). To implement it for custom wrapper types, use the
+/// [`impl_string_index`](crate::impl_string_index) macro:
+///
+/// ```
+/// use lite_strtab::impl_string_index;
+///
+/// #[derive(Clone, Copy)]
+/// #[repr(transparent)]
+/// struct ProviderIdx(u16);
+///
+/// impl_string_index!(ProviderIdx: u16);
+/// ```
+pub trait StringIndex: Copy + Send + Sync + 'static {
     /// Human-readable type name.
     const TYPE_NAME: &'static str;
 
@@ -30,14 +39,50 @@ pub trait StringIndex:
     fn to_usize(self) -> usize;
 }
 
-/// Macro pattern:
-/// - `$($ty:ty),+` - One or more comma-separated types
-/// - `$(,)?` - Optional trailing comma
-/// - `$( ... )+` wrapper repeats the inner block for each type
+/// Implements [`StringIndex`] for one or more types.
+///
+/// # Examples
+///
+/// For wrapper types with an inner integer type:
+///
+/// ```
+/// use lite_strtab::impl_string_index;
+///
+/// #[derive(Clone, Copy)]
+/// #[repr(transparent)]
+/// struct ProviderIdx(u16);
+///
+/// impl_string_index!(ProviderIdx: u16);
+/// ```
+#[macro_export]
 macro_rules! impl_string_index {
+    // Pattern for wrapper types: Type: InnerType
+    ($wrapper:ty: $inner:ty) => {
+        impl $crate::StringIndex for $wrapper {
+            const TYPE_NAME: &'static str = stringify!($wrapper);
+
+            #[inline]
+            fn try_from_usize(value: usize) -> Option<Self> {
+                <$inner as $crate::StringIndex>::try_from_usize(value).map(Self)
+            }
+
+            #[inline]
+            fn to_usize(self) -> usize {
+                <$inner as $crate::StringIndex>::to_usize(self.0)
+            }
+        }
+    };
+
+    // Pattern for multiple wrapper types
+    ($wrapper:ty: $inner:ty, $($rest:tt)*) => {
+        $crate::impl_string_index!($wrapper: $inner);
+        $crate::impl_string_index!($($rest)*);
+    };
+
+    // Pattern for primitive types
     ($($ty:ty),+ $(,)?) => {
         $(
-            impl StringIndex for $ty {
+            impl $crate::StringIndex for $ty {
                 const TYPE_NAME: &'static str = stringify!($ty);
 
                 #[inline]
@@ -55,13 +100,13 @@ macro_rules! impl_string_index {
 }
 
 #[cfg(target_pointer_width = "64")]
-impl_string_index!(u8, u16, u32, u64, usize);
+crate::impl_string_index!(u8, u16, u32, u64, usize);
 
 #[cfg(target_pointer_width = "32")]
-impl_string_index!(u8, u16, u32, usize);
+crate::impl_string_index!(u8, u16, u32, usize);
 
 #[cfg(target_pointer_width = "16")]
-impl_string_index!(u8, u16, usize);
+crate::impl_string_index!(u8, u16, usize);
 
 // Supported pointer widths for this crate.
 #[cfg(not(any(
@@ -70,25 +115,3 @@ impl_string_index!(u8, u16, usize);
     target_pointer_width = "64"
 )))]
 compile_error!("lite-strtab requires a 16-bit, 32-bit, or 64-bit target");
-
-// Seal the trait so only this crate can define valid implementations.
-mod private {
-    pub trait Sealed {}
-
-    macro_rules! impl_sealed {
-        ($($ty:ty),+ $(,)?) => {
-            $(
-                impl Sealed for $ty {}
-            )+
-        };
-    }
-
-    #[cfg(target_pointer_width = "64")]
-    impl_sealed!(u8, u16, u32, u64, usize);
-
-    #[cfg(target_pointer_width = "32")]
-    impl_sealed!(u8, u16, u32, usize);
-
-    #[cfg(target_pointer_width = "16")]
-    impl_sealed!(u8, u16, usize);
-}
