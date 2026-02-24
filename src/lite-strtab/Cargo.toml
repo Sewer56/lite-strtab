@@ -1,6 +1,6 @@
 [package]
 name = "lite-strtab"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Crate for storing a lot of strings in a single buffer to save memory."
 repository = "https://github.com/Sewer56/lite-strtab"
